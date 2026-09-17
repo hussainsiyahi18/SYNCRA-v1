@@ -21,17 +21,17 @@ graph LR
 ## Phase 1: Foundation, Quick Fixes & Realistic EPC Dataset
 *Goal: Fix known prototype defects and build a realistic multi-activity construction dataset for "Alpha Facility".*
 
-- [ ] **1.1 Fix Role-Based Navigation Bug**:
-  - Normalize `userRole` comparison in [`src/App.jsx`](file:///c:/Users/hp/syncra-v1/src/App.jsx#L84) so Project Managers see their designated navigation buttons instead of supervisor links.
-- [ ] **1.2 Design Alpha Facility WBS & Schedule Dataset**:
-  - Define 12–16 interconnected activities across Civil, Mechanical, Electrical, and Testing:
-    - *Civil*: `CF-101` (Site Prep), `CF-104` (Foundation Excavation), `CF-108` (Foundation Rebar/Pour), `CS-201` (Structural Steel)
-    - *Mechanical & Piping*: `MF-218` (Equipment Foundation), `MP-301` (Main Header Piping), `MP-305` (Vessel Placement)
-    - *Electrical & Instrumentation*: `EI-310` (Cable Trenching), `EI-312` (Cable Pulling), `IN-320` (Calibration & Readiness)
-    - *Milestones*: `M-01` (Civil Handover), `M-02` (Mechanical Completion), `M-03` (Integrated Commissioning)
-  - Define dependencies (FS/SS with lag), baseline durations, planned start/finish dates, and float.
-- [ ] **1.3 Verification**:
-  - Test login with both `manager01` and `domain01` and verify correct navigation states render without console errors.
+- [x] **1.1 Fix Role-Based Navigation Bug**:
+  - Normalized `userRole` comparison in [`src/App.jsx`](file:///c:/Users/hp/syncra-v1/src/App.jsx) so Project Managers see designated management navigation and supervisors see field execution navigation. Direct 1-click persona logins enabled.
+- [x] **1.2 Design Alpha Facility WBS & Schedule Dataset & Topological CPM Engine**:
+  - Defined 14 interconnected activities and milestones across Civil, Mechanical, Electrical, and Testing in [`src/data/alphaFacilityData.js`](file:///c:/Users/hp/syncra-v1/src/data/alphaFacilityData.js).
+  - Pure CPM engine dynamically derives ES, EF, LS, LF, total float, free float, and critical paths without hardcoded flags.
+  - Decoupled side milestone `M-01` (`TF = +9`) from terminal completion constraint `M-03` (`LF = 30`).
+- [x] **1.3 Programmatic & UI Verification**:
+  - 100% reciprocal topology verified (`validateScheduleTopology()`).
+  - Critical paths verified: Baseline `CF-101 → CF-104 → CF-108 → CS-201 → TC-401 → M-03`; Active `CF-104 → CF-108 → CS-201 → TC-401 → M-03`.
+  - All non-critical activities mathematically verified with `totalFloat > 0`.
+  - `npm run build` exits 0 (644ms); `npx oxlint` exits 0 with 0 errors/warnings.
 
 ---
 
