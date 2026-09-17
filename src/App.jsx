@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
+import { getProjectSummary } from "./data/alphaFacilityData";
 
 function App() {
   const [userRole, setUserRole] = useState(null);
   const [view, setView] = useState("overview");
   const [showIntro, setShowIntro] = useState(true);
+  const projectSummary = getProjectSummary();
 
 const [executionEvent, setExecutionEvent] = useState(null);
 const [incomingEvent, setIncomingEvent] = useState(null);
@@ -47,9 +49,10 @@ if (showIntro) {
   return (
     <LoginView
       onLogin={(role) => {
-        setUserRole(role);
+        const normalizedRole = (role || "").trim().toLowerCase();
+        setUserRole(normalizedRole);
 
-        if (role === "domain") {
+        if (normalizedRole === "domain") {
           setView("domain");
         } else {
           setView("overview");
@@ -71,8 +74,8 @@ if (showIntro) {
 
         <div className="project-switcher">
           <span className="eyebrow">PROJECT</span>
-          <div className="project-name">Alpha Facility</div>
-          <div className="project-meta">Assam · Active</div>
+          <div className="project-name">{projectSummary.projectName} {projectSummary.phase}</div>
+          <div className="project-meta">{projectSummary.location} · Day {projectSummary.statusDate} ({projectSummary.status})</div>
         </div>
 
         <nav className="navigation">
@@ -275,8 +278,8 @@ if (showIntro) {
 
             <div className="metric-card">
               <div className="metric-label">CRITICAL ACTIVITIES</div>
-              <div className="metric-value">4</div>
-              <div className="metric-note">2 currently exposed</div>
+              <div className="metric-value">{projectSummary.activeCriticalCount}</div>
+              <div className="metric-note">2 currently exposed · {projectSummary.activeCriticalPath.slice(0, 3).join(" → ")}...</div>
             </div>
 
             <div className="metric-card">

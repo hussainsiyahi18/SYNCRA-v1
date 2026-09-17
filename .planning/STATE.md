@@ -1,30 +1,24 @@
 # SYNCRA — Current Project State
 
 **Last Updated**: 2026-09-17  
-**Active Phase**: Groundwork / Planning  
-**Next Milestone**: Review & Alignment on Requirements & Roadmap  
+**Completed Phase**: Phase 1 — Foundation, Role-Based Navigation & EPC Dataset  
+**Status**: Phase 1 Complete & Programmatically Verified  
+**Plan Reference**: [PHASE_1_PLAN.md](file:///c:/Users/hp/syncra-v1/.planning/PHASE_1_PLAN.md)  
 
 ---
 
 ## Current Situation
-- The existing codebase (`syncra-v1`) is an initial React 19 + Vite frontend prototype.
-- Codebase has been mapped and documented in [`CODEBASE.md`](file:///c:/Users/hp/syncra-v1/.planning/CODEBASE.md).
-- Product requirements, system boundaries, and target product flow are documented in [`PROJECT.md`](file:///c:/Users/hp/syncra-v1/.planning/PROJECT.md).
-- Phased execution roadmap is established in [`ROADMAP.md`](file:///c:/Users/hp/syncra-v1/.planning/ROADMAP.md).
-- No code rewrites or intrusive refactors have been initiated, preserving the functioning prototype.
+- **Authoritative EPC Dataset**: Implemented `src/data/alphaFacilityData.js` featuring 14 interconnected nodes across Civil, Mechanical, Electrical, and Testing.
+- **Topological CPM Engine**: Pure topological sort, forward pass, and backward pass algorithms calculate `ES`, `EF`, `LS`, `LF`, `totalFloat`, `freeFloat`, and `isCritical` from raw parameters with zero hardcoding.
+- **Decoupled Milestone Semantics**: Non-terminal side milestone `M-01` (`TF = +9`) is decoupled from terminal completion constraints (`M-03`, `LF = 30`), ensuring `CF-108`'s zero-float status emerges solely from the physical driving chain.
+- **Critical Paths**:
+  - Baseline Critical Path: `CF-101 → CF-104 → CF-108 → CS-201 → TC-401 → M-03`
+  - Active Critical Path at Day 14: `CF-104 → CF-108 → CS-201 → TC-401 → M-03`
+- **100% Reciprocal Topology**: Verified by `validateScheduleTopology()`.
+- **Minimally Invasive App.jsx Integration**: Bound project summary data and normalized role handling for 1-click persona switching (`manager` vs `domain`).
+- **Build & Quality**: `npm run build` exits 0 (644ms); `npx oxlint` reports 0 warnings and 0 errors.
 
 ---
 
-## Key Decisions & Directives
-1. **Preserve Existing Prototype**: Do not perform greenfield rewrites. Build incrementally upon the visual and interaction patterns already created.
-2. **Deterministic Schedule Simulation**: Rather than relying solely on hardcoded strings (`CF-104`, `+3 days`), build a real CPM schedule engine and rich multi-activity dataset for the "Alpha Facility".
-3. **Manager Decision Authority**: SYNCRA analyzes and generates options, but the Project Manager remains the sole authority to approve recovery actions.
-4. **Baseline Invariance**: The approved baseline and historical actuals are never overwritten by field variances; only the working forecast updates.
-
----
-
-## Immediate Next Step
-- Solicit user review and alignment on:
-  1. Product requirements & boundary definitions in [`PROJECT.md`](file:///c:/Users/hp/syncra-v1/.planning/PROJECT.md).
-  2. The 5-phase evolution plan in [`ROADMAP.md`](file:///c:/Users/hp/syncra-v1/.planning/ROADMAP.md).
-- Upon approval, begin **Phase 1** (fixing the navigation casing bug and designing the multi-activity Alpha Facility EPC dataset).
+## Next Steps
+- Ready for Phase 2: Signal Ingestion, Confidence Engine & Automation Gate.
