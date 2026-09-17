@@ -35,31 +35,36 @@ graph LR
 
 ---
 
-## Phase 2: Lightweight Schedule Engine (CPM & Float Calculation)
-*Goal: Move from hardcoded "+3 days / 1 day float" strings to real deterministic schedule calculations.*
+## Phase 2: Closed-Loop Execution Intelligence & CPM Perturbation Engine (High-Fidelity Prototype)
+*Goal: Implement the complete end-to-end loop (Signal → Transparent Multi-Factor Gate → Dynamic CPM Perturbation → Float Erosion → Milestone Exposure → Updated Schedule) across 3 interactive scenarios with zero hardcoded impact values.*
 
-- [ ] **2.1 Implement CPM Graph Engine (`cpmEngine.js`)**:
-  - Calculate early start (ES), early finish (EF), late start (LS), late finish (LF), total float (TF), and free float (FF).
-  - Identify the active Critical Path through topological sort.
-- [ ] **2.2 Impact Simulation Functions**:
-  - Given an activity delay or blockage (e.g. `CF-104` +3 days), calculate downstream float consumption and milestone variance dynamically.
-- [ ] **2.3 Verification**:
-  - Unit-verify forward/backward pass with known test DAGs to confirm float and critical path calculations match EPC standard rules.
-
----
-
-## Phase 3: Dynamic Field Reporting & Activity Resolution
-*Goal: Enable field supervisors to report on different activities and simulate the AI extraction/matching pipeline.*
-
-- [ ] **3.1 Multi-Activity Report Submission**:
-  - Allow supervisor to select or input reports for different workfronts (e.g., Grid A-14 Civil, Header Piping Area B, Substation Cable Pulling).
-- [ ] **3.2 Activity Resolution & Confidence Scoring**:
-  - Implement heuristic/semantic matcher that maps raw field report text + discipline to the corresponding WBS Activity ID.
-  - Calculate multi-factor confidence metrics (e.g., photo count, crew log consistency, location precision).
-- [ ] **3.3 Event Broadcast**:
-  - Ensure dynamic event payloads are transmitted via `BroadcastChannel` with full activity metadata.
-- [ ] **3.4 Verification**:
-  - Submit reports for different activities in Domain Supervisor view; verify Manager view receives and resolves the specific activity dynamically.
+- [ ] **2.1 Dynamic CPM Perturbation & Impact Simulation Engine (`scheduleSimulation.js`)**:
+  - Implement `simulateSchedulePerturbation(baselineSchedule, disturbance)` taking `{ activityId, delayDays, status, reason }`.
+  - Dynamically recalculate forward and backward pass across the 14-node network under variance.
+  - Compute dynamic schedule metrics:
+    - Delta float for all activities: $\Delta \text{TF}_i = \text{TF}_{\text{perturbed}} - \text{TF}_{\text{baseline}}$
+    - Downstream float erosion and affected successor chains.
+    - Milestone variance: exact finish dates for `M-01` and `M-03` (e.g. Day 30 ➔ Day 33 dynamically derived).
+    - Active critical path shifts and newly critical branches.
+- [ ] **2.2 Transparent Multi-Factor Confidence & Automation Gate Model**:
+  - Implement deterministic prototype confidence scoring evaluating:
+    - Keyword & discipline alignment (`textScore`)
+    - Spatial & temporal schedule window alignment (`contextScore`)
+    - Crew & evidence log consistency (`evidenceScore`)
+    - Hard cross-validation checks (spatial, logic, resources)
+  - Derive Candidate Margin ($\text{Score}_1 - \text{Score}_2$).
+  - Execute Automation Gate rule:
+    $$\text{Auto-Accept} \iff \text{Confidence} \ge 90\% \land \text{Context} \ge 90\% \land \text{Margin} \ge 15\text{ pp} \land \text{No Hard-Check Failures}$$
+  - Transparently expose factor breakdowns and rule evaluations in the UI.
+- [ ] **2.3 Three Interactive Prototype Scenarios & Lightweight Demo Switcher**:
+  - *Scenario 1 (Critical Blockage)*: `CF-104` boulder obstruction (+3 days delay) ➔ Auto-Accepted ➔ critical path slips `M-03` from Day 30 to Day 33.
+  - *Scenario 2 (Float Absorption)*: `MP-301` piping delay (+1 day delay) ➔ Auto-Accepted ➔ float absorbed ($\text{TF} \to 0$) without slipping `M-03`.
+  - *Scenario 3 (Candidate Ambiguity)*: Ambiguous civil log between `CF-104` and `CF-105` (Margin +4 pp < 15 pp) ➔ Routed to Human Review.
+  - Provide lightweight demo scenario switcher on relevant UI views.
+- [ ] **2.4 Dynamic UI Data Binding & Verification**:
+  - Bind `Execution & Impact`, `Intelligence`, and `Updated Schedule` views to dynamically computed simulation outputs (remove hardcoded Day 33 / float strings).
+  - Ensure zero CSS/styling regressions and preserve existing 10-stage supervisor visual pipeline.
+  - Verify all 3 scenarios programmatically and through interactive browser walkthrough.
 
 ---
 
