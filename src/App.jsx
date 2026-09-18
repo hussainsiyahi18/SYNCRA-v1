@@ -1,46 +1,92 @@
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
-import { getProjectSummary } from "./data/alphaFacilityData";
+import { getProjectSummary, SCHEDULE_ACTIVITIES } from "./data/alphaFacilityData";
+import { simulateSchedulePerturbation } from "./data/scheduleSimulation";
+import { evaluateFieldSignal } from "./data/confidenceEngine";
+import { DEMO_SCENARIOS, getScenarioById } from "./data/demoScenarios";
 
 function App() {
   const [userRole, setUserRole] = useState(null);
   const [view, setView] = useState("overview");
   const [showIntro, setShowIntro] = useState(true);
+  const [activeScenarioId, setActiveScenarioId] = useState("cf104-blockage");
   const projectSummary = getProjectSummary();
 
-const [executionEvent, setExecutionEvent] = useState(null);
-const [incomingEvent, setIncomingEvent] = useState(null);
-useEffect(() => {
-  const channel = new BroadcastChannel("syncra-project-events");
-
-  channel.onmessage = (event) => {
-    if (event.data?.type === "EXECUTION_EVENT") {
-      setExecutionEvent(event.data.payload);
-    }
-  };
-
-  return () => {
-    channel.close();
-  };
-}, []);
-
-const publishExecutionEvent = (event) => {
-  setExecutionEvent(event);
-  setIncomingEvent(event);
-
-  const channel = new BroadcastChannel("syncra-project-events");
-
-  channel.postMessage({
-    type: "EXECUTION_EVENT",
-    payload: event,
+  const currentScenario = getScenarioById(activeScenarioId);
+  const currentPerturbation = simulateSchedulePerturbation(SCHEDULE_ACTIVITIES, {
+    activityId: currentScenario.activityId,
+    delayDays: currentScenario.delayDays,
+    newStatus: currentScenario.newStatus,
+    reason: currentScenario.reason
   });
 
-  channel.close();
+  const createEventFromScenario = useCallback((sc, ev) => ({
+    id: sc.id === "cf104-blockage" ? "EV-014" : sc.id === "mp301-delay" ? "EV-015" : "EV-016",
+    activity: sc.activityId,
+    activityName: sc.activityName,
+    location: sc.workfront,
+    discipline: sc.discipline,
+    workfront: sc.workfront,
+    state: sc.newStatus,
+    progress: `${sc.quantityProgress}%`,
+    date: "Day 14",
+    time: "16:42",
+    confidence: ev.confidence,
+    margin: ev.margin,
+    contextMatch: ev.contextMatch,
+    evidence: `${sc.evidenceCount} field photographs`,
+    issue: sc.reason,
+    gateRouting: ev.gateRouting,
+    isAutoAccept: ev.isAutoAccept,
+    gateExplanation: ev.gateExplanation,
+    topCandidate: `${ev.topCandidate.id} (${ev.topCandidate.name})`,
+    secondCandidate: `${ev.secondCandidate.id} (${ev.secondCandidate.name})`,
+    hardChecks: ev.hardChecks
+  }), []);
 
-  setTimeout(() => {
-    setIncomingEvent(null);
-  }, 4200);
-};
+  const [executionEvent, setExecutionEvent] = useState(() =>
+    createEventFromScenario(getScenarioById("cf104-blockage"), evaluateFieldSignal({ scenarioKey: "cf104-blockage" }))
+  );
+  const [incomingEvent, setIncomingEvent] = useState(null);
+
+  const handleScenarioChange = useCallback((newId) => {
+    setActiveScenarioId(newId);
+    const sc = getScenarioById(newId);
+    const ev = evaluateFieldSignal({ scenarioKey: newId });
+    setExecutionEvent(createEventFromScenario(sc, ev));
+  }, [createEventFromScenario]);
+
+  useEffect(() => {
+    const channel = new BroadcastChannel("syncra-project-events");
+
+    channel.onmessage = (event) => {
+      if (event.data?.type === "EXECUTION_EVENT") {
+        setExecutionEvent(event.data.payload);
+      }
+    };
+
+    return () => {
+      channel.close();
+    };
+  }, []);
+
+  const publishExecutionEvent = (event) => {
+    setExecutionEvent(event);
+    setIncomingEvent(event);
+
+    const channel = new BroadcastChannel("syncra-project-events");
+
+    channel.postMessage({
+      type: "EXECUTION_EVENT",
+      payload: event,
+    });
+
+    channel.close();
+
+    setTimeout(() => {
+      setIncomingEvent(null);
+    }, 4200);
+  };
 if (showIntro) {
   return <SyncraIntro onComplete={() => setShowIntro(false)} />;
 }
@@ -240,6 +286,33 @@ if (showIntro) {
         </div>
       </header>
 
+      {/* PHASE 2 INTERACTIVE DEMO SCENARIO SWITCHER */}
+      <div className="scenario-switcher-bar global-demo-switcher" style={{ margin: "16px 28px 0 28px" }}>
+        <span className="switcher-label">⚡ PHASE 2 DEMO SCENARIO:</span>
+        <div className="switcher-chips">
+          {DEMO_SCENARIOS.map((sc) => (
+            <button
+              key={sc.id}
+              type="button"
+              className={`switcher-chip ${activeScenarioId === sc.id ? "active" : ""}`}
+              onClick={() => handleScenarioChange(sc.id)}
+            >
+              <strong>{sc.name}</strong>
+              <small style={{
+                marginLeft: "8px",
+                opacity: 0.9,
+                padding: "2px 6px",
+                borderRadius: "3px",
+                background: sc.badgeType === "danger" ? "rgba(239, 68, 68, 0.25)" : sc.badgeType === "warning" ? "rgba(234, 179, 8, 0.25)" : "rgba(147, 51, 234, 0.25)",
+                color: sc.badgeType === "danger" ? "#fca5a5" : sc.badgeType === "warning" ? "#fde047" : "#d8b4fe"
+              }}>
+                {sc.badge}
+              </small>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <main>
       {view === "overview" ? (
         <section className="content">
@@ -400,19 +473,25 @@ if (showIntro) {
         <ImpactView
           onBack={() => setView("intelligence")}
           onRecovery={() => setView("recovery")}
+          perturbationResult={currentPerturbation}
         />
       ) : view === "recovery" ? (
         <RecoveryView
           onBack={() => setView("impact")}
           onApproved={() => setView("updated")}
+          perturbationResult={currentPerturbation}
         />
       ) : view === "domain" ? (
-  <DomainSupervisorView
-  onBack={() => setView("domain")}
-  onPublish={publishExecutionEvent}
-/>
-) : (
-  <UpdatedStateView />
+        <DomainSupervisorView
+          key={activeScenarioId}
+          onPublish={publishExecutionEvent}
+          activeScenarioId={activeScenarioId}
+          onSelectScenario={handleScenarioChange}
+        />
+      ) : (
+  <UpdatedStateView
+    perturbationResult={currentPerturbation}
+  />
 )}
       </main>
     </div>
@@ -1265,7 +1344,12 @@ function IntelligenceView({
   );
 }
 
-function ImpactView({ onBack, onRecovery }) {
+function ImpactView({ onBack, onRecovery, perturbationResult }) {
+  const result = perturbationResult || simulateSchedulePerturbation();
+  const target = result.targetNode;
+  const finishExposure = result.milestoneExposure["M-03"];
+  const isDelayed = result.isProjectFinishDelayed;
+
   return (
     <section className="content">
 
@@ -1274,33 +1358,38 @@ function ImpactView({ onBack, onRecovery }) {
           ← Back to intelligence
         </button>
 
-        <p className="section-kicker">IMPACT ANALYSIS</p>
+        <p className="section-kicker">IMPACT ANALYSIS · DYNAMIC CPM ENGINE</p>
         <h2>What does this state affect?</h2>
         <p>
-          SYNCRA traces the verified execution state through the project
-          network before determining project-level exposure.
+          SYNCRA recalculates the living 14-node schedule network to trace exact float erosion and downstream milestone variance.
         </p>
       </div>
 
       <div className="impact-summary">
         <div>
           <span>TRIGGER</span>
-          <strong>CF-104 · Blocked</strong>
+          <strong>{target.id} · {target.status}</strong>
         </div>
 
         <div>
           <span>NETWORK EXPOSURE</span>
-          <strong>2 downstream activities</strong>
+          <strong>{result.erodedActivities.length} affected {result.erodedActivities.length === 1 ? "activity" : "activities"}</strong>
         </div>
 
         <div>
           <span>PROJECT FINISH</span>
-          <strong className="green-text">Not currently exposed</strong>
+          <strong className={isDelayed ? "red-text" : "green-text"}>
+            {isDelayed
+              ? `Day ${finishExposure.perturbedEF} (+${result.projectDelayDays}d delay)`
+              : `Day ${finishExposure.perturbedEF} (Preserved · 0d variance)`}
+          </strong>
         </div>
 
         <div>
           <span>FLOAT</span>
-          <strong className="amber-text">1 day remaining</strong>
+          <strong className={target.totalFloat === 0 ? "amber-text" : "green-text"}>
+            {target.totalFloat} {target.totalFloat === 1 ? "day" : "days"} remaining
+          </strong>
         </div>
       </div>
 
@@ -1308,40 +1397,30 @@ function ImpactView({ onBack, onRecovery }) {
         <div className="panel-header">
           <div>
             <p className="section-kicker">DEPENDENCY IMPACT</p>
-            <h3>Execution state through the network</h3>
+            <h3>Dynamically calculated driving chain to completion</h3>
           </div>
 
-          <span className="impact-level">MODERATE</span>
+          <span className={`impact-level ${isDelayed ? "danger" : "warning"}`}>
+            {isDelayed ? "CRITICAL SLIPPAGE" : "FLOAT BUFFER ABSORPTION"}
+          </span>
         </div>
 
         <div className="impact-chain">
-          <div className="impact-node blocked">
-            <span>ACTIVITY</span>
-            <strong>CF-104</strong>
-            <small>Blocked · Grid A-14</small>
-          </div>
-
-          <div className="impact-connector">
-            <span>FS</span>
-            <i>→</i>
-          </div>
-
-          <div className="impact-node exposed">
-            <span>SUCCESSOR</span>
-            <strong>MF-218</strong>
-            <small>Equipment Foundation</small>
-          </div>
-
-          <div className="impact-connector">
-            <span>FS</span>
-            <i>→</i>
-          </div>
-
-          <div className="impact-node exposed">
-            <span>DOWNSTREAM</span>
-            <strong>TC-401</strong>
-            <small>Equipment Testing</small>
-          </div>
+          {result.exposedCriticalChain.map((node, idx) => (
+            <div key={node.id} style={{ display: "contents" }}>
+              <div className={`impact-node ${idx === 0 ? "blocked" : "exposed"}`}>
+                <span>{idx === 0 ? "DISTURBANCE" : node.id === "M-03" ? "TERMINAL MILESTONE" : "DRIVING CHAIN"}</span>
+                <strong>{node.id}</strong>
+                <small>{node.name} (EF: Day {node.earlyFinish})</small>
+              </div>
+              {idx < result.exposedCriticalChain.length - 1 && (
+                <div className="impact-connector">
+                  <span>FS</span>
+                  <i>→</i>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 
@@ -1349,44 +1428,49 @@ function ImpactView({ onBack, onRecovery }) {
 
         <div className="impact-detail-card">
           <p className="section-kicker">SCHEDULE EFFECT</p>
-          <h3>Local disruption, not yet project delay</h3>
+          <h3>Dynamic CPM Network Recalculation</h3>
 
           <div className="effect-row">
             <span>Activity delay</span>
-            <strong>Potential</strong>
+            <strong>+{result.disturbance.delayDays} {result.disturbance.delayDays === 1 ? "day" : "days"}</strong>
           </div>
 
           <div className="effect-row">
             <span>Successor exposure</span>
-            <strong>Yes</strong>
+            <strong>{result.erodedActivities.length > 0 ? `${result.erodedActivities.length} activities` : "None"}</strong>
           </div>
 
           <div className="effect-row">
             <span>Critical path exposure</span>
-            <strong>Not confirmed</strong>
+            <strong className={isDelayed ? "red-text" : "amber-text"}>
+              {isDelayed ? "Direct Critical Slippage" : "Absorbed within Float"}
+            </strong>
           </div>
 
           <div className="effect-row">
             <span>Project finish impact</span>
-            <strong className="green-text">None currently</strong>
+            <strong className={isDelayed ? "red-text" : "green-text"}>
+              {isDelayed
+                ? `Day 30 ➔ Day ${finishExposure.perturbedEF} (+${result.projectDelayDays}d)`
+                : "None (Day 30 Preserved)"}
+            </strong>
           </div>
         </div>
 
         <div className="impact-detail-card">
           <p className="section-kicker">WHY IT MATTERS</p>
-          <h3>Float is the protection layer</h3>
+          <h3>Float protection & downstream propagation</h3>
 
           <p className="impact-copy">
-            CF-104 currently has 1 day of available float. The disruption
-            can therefore be absorbed locally only while that buffer remains.
-            A continued constraint could transfer the exposure to downstream
-            activities.
+            {isDelayed
+              ? `${target.id} has 0 days of available float on the active critical chain. The +${result.disturbance.delayDays}-day delay directly propagates downstream through ${result.exposedCriticalChain.slice(1, -1).map(n => n.id).join(" → ")} to Substantial Completion (M-03), pushing project delivery from Day 30 to Day ${finishExposure.perturbedEF}.`
+              : `${target.id} possessed available total float. The +${result.disturbance.delayDays}-day delay was absorbed by its float buffer (${result.deltaFloatMap[target.id]}d delta), protecting downstream commissioning and anchoring project completion on Day 30.`}
           </p>
 
           <div className="impact-rule">
             <span>PROJECT IMPACT RULE</span>
             <strong>
-              Activity delay ≠ Project delay
+              {isDelayed ? "Critical delay = Project delay" : "Float absorbed = Project protected"}
             </strong>
           </div>
         </div>
@@ -1396,10 +1480,13 @@ function ImpactView({ onBack, onRecovery }) {
       <div className="impact-decision">
         <div>
           <p className="section-kicker">NEXT DECISION</p>
-          <h3>Recovery may be required before float is consumed.</h3>
+          <h3>
+            {isDelayed
+              ? "Critical milestone exposed. Manager intervention required."
+              : "Variance absorbed into float buffer. Review optional recovery actions."}
+          </h3>
           <p>
-            SYNCRA has identified the exposure and can now generate recovery
-            options for manager review.
+            SYNCRA dynamically calculated this network exposure from ground reality. Review recovery scenarios below.
           </p>
         </div>
 
@@ -1416,17 +1503,20 @@ function ImpactView({ onBack, onRecovery }) {
   );
 }
 
-function RecoveryView({ onBack, onApproved }) {
+function RecoveryView({ onBack, onApproved, perturbationResult }) {
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const result = perturbationResult || simulateSchedulePerturbation();
+  const targetId = result.targetNode.id;
+  const delayDays = result.projectDelayDays;
+  const finishDay = result.milestoneExposure["M-03"].perturbedEF;
 
   const plans = [
     {
       id: "A",
       title: "Resequence work",
-      description:
-        "Move an independent downstream workfront forward while CF-104 is blocked.",
+      description: `Move an independent downstream workfront forward while ${targetId} is constrained.`,
       forecast: "0 days",
-      schedule: "Protects current finish",
+      schedule: "Protects current finish at Day 30",
       resource: "Low",
       risk: "Moderate",
       consequence: "Uses available workfront capacity",
@@ -1435,10 +1525,9 @@ function RecoveryView({ onBack, onApproved }) {
     {
       id: "B",
       title: "Shift resources",
-      description:
-        "Reassign available excavation capacity from another workfront to recover CF-104.",
+      description: `Reassign available capacity from an off-critical workfront to recover ${targetId}.`,
       forecast: "+1 day",
-      schedule: "Minor finish exposure",
+      schedule: "Minor finish exposure (Day 31)",
       resource: "Medium",
       risk: "Low",
       consequence: "Creates pressure on donor workfront",
@@ -1447,13 +1536,12 @@ function RecoveryView({ onBack, onApproved }) {
     {
       id: "C",
       title: "Accept variance",
-      description:
-        "Allow the current constraint to continue without recovery intervention.",
-      forecast: "+3 days",
-      schedule: "Finish moves to 03 Oct",
+      description: "Allow the current constraint to continue without recovery intervention.",
+      forecast: `+${delayDays} days`,
+      schedule: `Finish moves to Day ${finishDay}`,
       resource: "None",
       risk: "High",
-      consequence: "Consumes remaining float and exposes testing",
+      consequence: `Consumes remaining float and delays project completion to Day ${finishDay}`,
       recommended: false,
     },
   ];
@@ -1749,21 +1837,19 @@ const SCENARIO_DATA = {
   },
 };
 
-function DomainSupervisorView({ onBack, onPublish }) {
+function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario }) {
+  const initialScenario = getScenarioById(activeScenarioId) || DEMO_SCENARIOS[0];
   const [submitted, setSubmitted] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
-  const [activePreset, setActivePreset] = useState("obstacle");
-  const [reportNote, setReportNote] = useState(
-    "Excavation stopped at Grid A-14 after encountering unexpected buried concrete structure. Excavator EX-07 blocked, approx 62% progress. Need rock breaker or engineering clearance."
-  );
-  const [quantityProgress, setQuantityProgress] = useState(62);
-  const [executionStatus, setExecutionStatus] = useState("Blocked");
+  const [reportNote, setReportNote] = useState(initialScenario.reportText);
+  const [quantityProgress, setQuantityProgress] = useState(initialScenario.quantityProgress);
+  const [executionStatus, setExecutionStatus] = useState(initialScenario.newStatus);
   const [evidenceAttached, setEvidenceAttached] = useState(true);
-  const [evidenceCount, setEvidenceCount] = useState(4);
+  const [evidenceCount, setEvidenceCount] = useState(initialScenario.evidenceCount);
   const [activeTab, setActiveTab] = useState("extracted"); // 'extracted' | 'match' | 'context' | 'evidence'
-  const [gateScenario, setGateScenario] = useState("auto-accept"); // 'auto-accept' | 'ambiguity' | 'context-mismatch' | 'contradiction' | 'unresolved'
+  const [gateScenario, setGateScenario] = useState(activeScenarioId === "ambiguous-civil" ? "ambiguity" : "auto-accept");
   const [humanActionStatus, setHumanActionStatus] = useState(null); // feedback message for human actions
 
   // Voice memo dictation simulation
@@ -1783,39 +1869,38 @@ function DomainSupervisorView({ onBack, onPublish }) {
     }
   };
 
-  // Preset scenarios
-  const setScenario = (type, text, status, progress) => {
-    setActivePreset(type);
-    setReportNote(text);
-    if (status) setExecutionStatus(status);
-    if (progress !== undefined) setQuantityProgress(progress);
-  };
-
   const currentScenario = SCENARIO_DATA[gateScenario] || SCENARIO_DATA["auto-accept"];
 
   // Publish event callback
   const publishCurrentEvent = useCallback((scenarioToUse) => {
-    const sc = scenarioToUse || SCENARIO_DATA[gateScenario] || SCENARIO_DATA["auto-accept"];
+    const sc = scenarioToUse || getScenarioById(activeScenarioId) || SCENARIO_DATA[gateScenario] || SCENARIO_DATA["auto-accept"];
+    const evalData = evaluateFieldSignal({ scenarioKey: activeScenarioId || gateScenario });
+
     const event = {
-      id: "EV-014",
-      activity: "CF-104",
-      activityName: "Foundation Excavation",
-      location: "Grid A-14",
-      discipline: "Civil & Groundworks",
-      workfront: "Grid A-14 (Substructure Trench)",
+      id: activeScenarioId === "mp301-delay" ? "EV-015" : activeScenarioId === "ambiguous-civil" ? "EV-016" : "EV-014",
+      activity: sc.activityId || "CF-104",
+      activityName: sc.activityName || "Foundation Excavation",
+      location: sc.workfront || "Grid A-14",
+      discipline: sc.discipline || "Civil & Groundworks",
+      workfront: sc.workfront || "Grid A-14",
       state: executionStatus,
       progress: `${quantityProgress}%`,
       date: "Day 14",
       time: "16:42",
-      confidence: sc.confidence,
-      margin: sc.margin,
-      contextMatch: sc.contextMatch,
+      confidence: evalData.confidence,
+      margin: evalData.margin,
+      contextMatch: evalData.contextMatch,
       evidence: `${evidenceCount} field photographs`,
-      issue: executionStatus === "Blocked" ? "Unexpected buried concrete structure" : "Normal progress logged",
-      gateRouting: sc.gateRouting,
+      issue: sc.reason || (executionStatus === "Blocked" ? "Unexpected buried obstruction" : "Field progress reported"),
+      gateRouting: evalData.gateRouting,
+      isAutoAccept: evalData.isAutoAccept,
+      gateExplanation: evalData.gateExplanation,
+      topCandidate: `${evalData.topCandidate.id} (${evalData.topCandidate.name})`,
+      secondCandidate: `${evalData.secondCandidate.id} (${evalData.secondCandidate.name})`,
+      hardChecks: evalData.hardChecks
     };
     if (onPublish) onPublish(event);
-  }, [gateScenario, executionStatus, quantityProgress, evidenceCount, onPublish]);
+  }, [activeScenarioId, gateScenario, executionStatus, quantityProgress, evidenceCount, onPublish]);
 
   // Fast skip function for instant demo gratification
   const handleFastComplete = () => {
@@ -1838,115 +1923,106 @@ function DomainSupervisorView({ onBack, onPublish }) {
         publishCurrentEvent();
         setProcessing(false);
       }
-    }, 180); // 180ms * 10 = ~1.8s smooth progression
+    }, 450);
 
     return () => clearInterval(interval);
   }, [processing, publishCurrentEvent]);
 
   return (
-    <section className="content supervisor-flow-container">
-      {/* HEADER WITH RETURN / BACK BUTTON */}
-      <div className="page-intro supervisor-intro">
-        <div className="intro-header-row">
-          <button
-            id="btn-return-nav"
-            className="back-button return-btn"
-            onClick={() => {
-              if (submitted) {
-                setSubmitted(false);
-                setProcessingStep(0);
-                setHumanActionStatus(null);
-              } else {
-                onBack();
-              }
-            }}
-            type="button"
-          >
-            ← Return
-          </button>
-
-          <div className="supervisor-badge-rail">
-            <span className="domain-role-tag">DOMAIN SUPERVISOR · FIELD VIEW</span>
-            <span className="live-site-pulse">
-              <span className="pulse-dot"></span> LIVE SITE FEED
-            </span>
+    <section className="content domain-page">
+      <div className="domain-shell">
+        {/* TOP STATUS BAR */}
+        <div className="domain-top-status-bar">
+          <div className="status-item">
+            <span className="status-kicker">PROJECT</span>
+            <strong>ALPHA FACILITY PHASE 2</strong>
+          </div>
+          <div className="status-divider"></div>
+          <div className="status-item">
+            <span className="status-kicker">DOMAIN SUPERVISOR</span>
+            <strong>ARJUN SHARMA (CIVIL)</strong>
+          </div>
+          <div className="status-divider"></div>
+          <div className="status-item">
+            <span className="status-kicker">WORKFRONT</span>
+            <strong>GRID A-14 · SUBSTRUCTURE</strong>
+          </div>
+          <div className="status-divider"></div>
+          <div className="status-item">
+            <span className="status-kicker">STATUS DATE</span>
+            <strong className="active-green">DAY 14 · SHIFT A</strong>
           </div>
         </div>
 
-        <h2>Field Execution Capture & Trust Pipeline</h2>
-        <p className="intro-subtext">
-          Zero-manual-labour field intake. Supervisors submit natural language observations; SYNCRA automatically resolves project context, evaluates the 10-stage execution truth pipeline, and routes through the dual-score automation gate.
-        </p>
-      </div>
+        {/* WORKSPACE TITLE ROW */}
+        <div className="supervisor-header-row">
+          <div>
+            <p className="section-kicker">FIELD EXECUTION ENTRY</p>
+            <h2>Domain Supervisor · Daily Field Report</h2>
+            <p className="workspace-sub">
+              Log daily site observations and ground reality without manual schedule entry.
+            </p>
+          </div>
 
-      {!submitted ? (
-        /* ====================================================================
-           1. LOW-FRICTION FIELD INPUT (Part IV, Sections 15–18)
-           Project, domain, workfront and expected work supplied automatically
-           ==================================================================== */
-        <div className="supervisor-field-layout">
-          {/* LEFT: OBSERVATION FORM & LOW-FRICTION INPUT */}
-          <div className="field-entry-card">
-            {/* AUTO-SUPPLIED PROJECT CONTEXT BANNER */}
-            <div className="context-auto-banner">
-              <div className="context-banner-header">
-                <span className="context-chip">AUTO-DERIVED CONTEXT</span>
-                <span className="context-rule-hint">Part IV §15: High-Context Zero-Manual-Entry</span>
-              </div>
-              <div className="context-grid">
-                <div className="context-item">
-                  <span className="ctx-label">PROJECT</span>
-                  <strong className="ctx-val">Alpha Facility (Assam · Pkg 2)</strong>
-                </div>
-                <div className="context-item">
-                  <span className="ctx-label">DOMAIN</span>
-                  <strong className="ctx-val">Civil & Groundworks</strong>
-                </div>
-                <div className="context-item">
-                  <span className="ctx-label">WORKFRONT</span>
-                  <strong className="ctx-val">Grid A-14 (Substructure)</strong>
-                </div>
-                <div className="context-item">
-                  <span className="ctx-label">DATE & SHIFT</span>
-                  <strong className="ctx-val">Day 14 · Shift A (16:42 IST)</strong>
-                </div>
-              </div>
-            </div>
+          <div className="action-buttons-group">
+            <button
+              type="button"
+              className="action-btn-outline"
+              onClick={() => {
+                setSubmitted(false);
+                setProcessing(false);
+                setProcessingStep(0);
+              }}
+            >
+              <span>↺</span> New Report
+            </button>
+            <button
+              type="button"
+              className="action-btn-primary"
+              onClick={handleFastComplete}
+            >
+              <span>⚡</span> Fast Complete Demo
+            </button>
+          </div>
+        </div>
 
-            {/* PLAN-AWARE FIELD CHECKLIST (Part IV, Section 17 & Part XV §82) */}
-            <div className="plan-checklist-card">
-              <div className="checklist-header">
+        {!submitted ? (
+          <div className="supervisor-field-layout">
+          {/* LEFT COLUMN: LOW FRICTION FIELD ENTRY */}
+          <div className="field-entry-column">
+            {/* CONTEXT CHIP / WORKFRONT AUTO-ATTACH */}
+            <div className="context-banner-card">
+              <div className="context-card-header">
                 <div>
-                  <span className="checklist-kicker">PLAN-AWARE FIELD CHECKLIST (CPM SCHEDULE LINKED)</span>
-                  <h4>Today&apos;s Expected Work</h4>
+                  <span className="mini-kicker">AUTO-POPULATED CONTEXT</span>
+                  <h4>Assigned Workfront & Expected Activity</h4>
                 </div>
-                <span className="schedule-link-badge">L5/L6 Mapped in Backend</span>
+                <span className="verified-badge">SYSTEM LINKED</span>
               </div>
-              <div className="checklist-items">
-                <div className="checklist-row active-task">
-                  <div className="check-box checked">✓</div>
-                  <div className="check-content">
-                    <strong>CF-104: Excavate foundation trench to 4.2m depth</strong>
-                    <div className="check-meta">
-                      <span>Target Today: 15m (65%)</span>
-                      <span className="meta-sep">·</span>
-                      <span>Current: 11m (62%)</span>
-                      <span className="meta-sep">·</span>
-                      <span className="tag-equipment">Excavator EX-07</span>
-                    </div>
+
+              <div className="context-items-list">
+                <div className="context-item-row">
+                  <div className="item-icon-box">📍</div>
+                  <div>
+                    <span className="item-sub">LOCATION / WORKFRONT</span>
+                    <strong>Grid A-14: Foundation Pit Substructure</strong>
                   </div>
-                  <span className="task-status-pill in-focus">ACTIVE FOCUS</span>
                 </div>
 
-                <div className="checklist-row next-task">
-                  <div className="check-box">○</div>
-                  <div className="check-content">
-                    <strong>CF-105: Prepare rebar cage staging</strong>
-                    <div className="check-meta">
-                      <span>Target: Follow-on upon CF-104 trench clearance</span>
-                      <span className="meta-sep">·</span>
-                      <span>Rebar Crew #3</span>
-                    </div>
+                <div className="context-item-row">
+                  <div className="item-icon-box">📅</div>
+                  <div>
+                    <span className="item-sub">SCHEDULED ACTIVITY</span>
+                    <strong>CF-104: Foundation Excavation (60-70% window)</strong>
+                  </div>
+                  <span className="task-status-pill in-progress">ACTIVE TODAY</span>
+                </div>
+
+                <div className="context-item-row">
+                  <div className="item-icon-box">🔗</div>
+                  <div>
+                    <span className="item-sub">SUCCESSOR DEPENDENCY</span>
+                    <strong>CF-108: Foundation Pour & Curing (Starts upon CF-104 completion)</strong>
                   </div>
                   <span className="task-status-pill pending">PENDING CLEARANCE</span>
                 </div>
@@ -1955,83 +2031,29 @@ function DomainSupervisorView({ onBack, onPublish }) {
 
             {/* QUICK PRESET SCENARIO SELECTOR */}
             <div className="quick-presets-section">
-              <span className="presets-title">QUICK FIELD SCENARIO PRESETS:</span>
+              <span className="presets-title">PHASE 2 INTERACTIVE DEMO SCENARIOS:</span>
               <div className="preset-buttons-grid">
-                <button
-                  type="button"
-                  className={`preset-btn ${activePreset === "obstacle" ? "active" : ""}`}
-                  onClick={() =>
-                    setScenario(
-                      "obstacle",
-                      "Excavation stopped at Grid A-14 after encountering unexpected buried concrete structure. Excavator EX-07 blocked, approx 62% progress. Need rock breaker or engineering clearance.",
-                      "Blocked",
-                      62
-                    )
-                  }
-                >
-                  <span className="preset-icon">⚡</span>
-                  <div>
-                    <strong>Buried Obstacle (Obstruction)</strong>
-                    <small>Grid A-14 · EX-07 halted · 62%</small>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  className={`preset-btn ${activePreset === "routine" ? "active" : ""}`}
-                  onClick={() =>
-                    setScenario(
-                      "routine",
-                      "Completed 11m of foundation trench excavation at Grid A-14. Soil strata stable, trench sides shored, excavator EX-07 operating normally. Day target on schedule.",
-                      "In Progress",
-                      62
-                    )
-                  }
-                >
-                  <span className="preset-icon">✓</span>
-                  <div>
-                    <strong>Routine Progress Update</strong>
-                    <small>Grid A-14 · 11m excavated · Nominal</small>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  className={`preset-btn ${activePreset === "breakdown" ? "active" : ""}`}
-                  onClick={() =>
-                    setScenario(
-                      "breakdown",
-                      "Excavator EX-07 hydraulic hose ruptured at Grid A-14 workfront. Mechanical breakdown, digging halted at 62%. Maintenance crew notified.",
-                      "Blocked",
-                      62
-                    )
-                  }
-                >
-                  <span className="preset-icon">🚜</span>
-                  <div>
-                    <strong>Equipment Breakdown</strong>
-                    <small>EX-07 Hydraulic failure</small>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  className={`preset-btn ${activePreset === "weather" ? "active" : ""}`}
-                  onClick={() =>
-                    setScenario(
-                      "weather",
-                      "Sudden monsoon downpour flooded workfront trench at Grid A-14. Soil saturation prevents safe digging. Pumps running, progress paused at 62%.",
-                      "Blocked",
-                      62
-                    )
-                  }
-                >
-                  <span className="preset-icon">🌧</span>
-                  <div>
-                    <strong>Weather Inundation</strong>
-                    <small>Heavy rainfall / flooded pit</small>
-                  </div>
-                </button>
+                {DEMO_SCENARIOS.map((sc) => (
+                  <button
+                    key={sc.id}
+                    type="button"
+                    className={`preset-btn ${activeScenarioId === sc.id ? "active" : ""}`}
+                    onClick={() => {
+                      if (onSelectScenario) onSelectScenario(sc.id);
+                      setReportNote(sc.reportText);
+                      setExecutionStatus(sc.newStatus);
+                      setQuantityProgress(sc.quantityProgress);
+                      setEvidenceCount(sc.evidenceCount);
+                      setGateScenario(sc.id === "ambiguous-civil" ? "ambiguity" : "auto-accept");
+                    }}
+                  >
+                    <span className="preset-icon">{sc.badgeType === "danger" ? "⚡" : sc.badgeType === "warning" ? "⏳" : "⚠️"}</span>
+                    <div>
+                      <strong>{sc.name}</strong>
+                      <small>{sc.workfront} · {sc.badge}</small>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -2887,22 +2909,27 @@ function DomainSupervisorView({ onBack, onPublish }) {
           )}
         </div>
       )}
+      </div>
     </section>
   );
 }
 
-function UpdatedStateView() {
+function UpdatedStateView({ perturbationResult }) {
+  const result = perturbationResult || simulateSchedulePerturbation();
+  const baselineFinish = 30;
+  const forecastFinish = result ? result.milestoneExposure["M-03"].perturbedEF : 30;
+  const isDelayed = result ? result.isProjectFinishDelayed : false;
+
   return (
     <section className="content">
 
       <div className="page-intro">
-        <p className="section-kicker">STATE UPDATED</p>
+        <p className="section-kicker">STATE UPDATED · DYNAMIC CPM ENGINE</p>
 
-        <h2>Recovery decision incorporated</h2>
+        <h2>Living Schedule vs Approved Baseline</h2>
 
         <p>
-          The manager-approved recovery action has been applied to the
-          current working state. The approved baseline remains unchanged.
+          The dynamic CPM engine recalculates forecast dates while locking the contractually approved baseline.
         </p>
       </div>
 
@@ -2910,13 +2937,13 @@ function UpdatedStateView() {
         <div className="success-mark">✓</div>
 
         <div>
-          <span>manager DECISION</span>
-          <strong>Plan A · Resequence work</strong>
-          <p>Approved recovery strategy</p>
+          <span>RECOVERY ORIENTATION</span>
+          <strong>{isDelayed ? `Variance Managed: +${result.projectDelayDays}d Delay` : "Variance Absorbed: On Schedule"}</strong>
+          <p>Approved baseline locked · Working plan active</p>
         </div>
 
         <div className="approved-badge">
-          APPROVED
+          ACTIVE STATE
         </div>
       </div>
 
@@ -2929,21 +2956,24 @@ function UpdatedStateView() {
 
           <div className="forecast-comparison">
             <div>
-              <span>PREVIOUS</span>
-              <strong>03 Oct</strong>
+              <span>APPROVED BASELINE</span>
+              <strong>Day {baselineFinish}</strong>
             </div>
 
             <div className="forecast-arrow">→</div>
 
             <div>
-              <span>UPDATED</span>
-              <strong className="green-text">30 Sep</strong>
+              <span>CURRENT FORECAST</span>
+              <strong className={isDelayed ? "red-text" : "green-text"}>
+                Day {forecastFinish} {isDelayed ? `(+${result.projectDelayDays}d)` : "(On Time)"}
+              </strong>
             </div>
           </div>
 
           <p>
-            Resequencing absorbs the local disruption without moving the
-            current project finish.
+            {isDelayed
+              ? `Downstream critical chain extended. Substantial Completion moves to Day ${forecastFinish}.`
+              : "Disruption fully absorbed into available total float buffer without moving the project finish."}
           </p>
         </div>
 
@@ -2954,12 +2984,14 @@ function UpdatedStateView() {
 
           <div className="baseline-row">
             <span>BASELINE FINISH</span>
-            <strong>30 Sep</strong>
+            <strong>Day {baselineFinish} (Preserved)</strong>
           </div>
 
           <div className="baseline-row">
             <span>WORKING PLAN</span>
-            <strong>Updated</strong>
+            <strong className={isDelayed ? "red-text" : "green-text"}>
+              Day {forecastFinish}
+            </strong>
           </div>
 
           <div className="baseline-row">
@@ -2970,47 +3002,75 @@ function UpdatedStateView() {
 
       </div>
 
-      <div className="state-change-card">
-
+      {/* DYNAMIC CPM SCHEDULE STATUS TABLE */}
+      <div className="state-schedule-table-card panel" style={{ marginTop: "24px", padding: "20px" }}>
         <div className="panel-header">
           <div>
-            <p className="section-kicker">PROJECT STATE CHANGE</p>
-            <h3>What changed?</h3>
+            <p className="section-kicker">LIVING EPC SCHEDULE STATUS</p>
+            <h3>14-Node Schedule Variance Table</h3>
           </div>
-
-          <span className="state-change-tag">
-            RECORDED
-          </span>
+          <span className="state-change-tag">TOPOLOGICAL CPM</span>
         </div>
 
-        <div className="state-change-chain">
+        <div className="table-wrapper" style={{ overflowX: "auto", marginTop: "14px" }}>
+          <table className="cpm-comparison-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--syncra-border)", color: "#94a3b8", textAlign: "left" }}>
+                <th style={{ padding: "8px" }}>ID</th>
+                <th style={{ padding: "8px" }}>ACTIVITY NAME</th>
+                <th style={{ padding: "8px" }}>DISCIPLINE</th>
+                <th style={{ padding: "8px" }}>BASELINE EF</th>
+                <th style={{ padding: "8px" }}>FORECAST EF</th>
+                <th style={{ padding: "8px" }}>FLOAT DELTA</th>
+                <th style={{ padding: "8px" }}>STATUS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result?.perturbedActivities.map(act => {
+                const base = result.baselineActivities.find(b => b.id === act.id);
+                const deltaEF = act.earlyFinish - (base?.earlyFinish || act.earlyFinish);
+                const deltaTF = act.totalFloat - (base?.totalFloat || act.totalFloat);
+                const isDisturbed = act.id === result.disturbance.activityId;
 
-          <div className="change-node">
-            <span>BEFORE</span>
-            <strong>CF-104</strong>
-            <small>Blocked</small>
-          </div>
-
-          <div className="change-arrow">→</div>
-
-          <div className="change-node active">
-            <span>RECOVERY</span>
-            <strong>Plan A</strong>
-            <small>Resequenced</small>
-          </div>
-
-          <div className="change-arrow">→</div>
-
-          <div className="change-node">
-            <span>CURRENT STATE</span>
-            <strong>CF-104</strong>
-            <small>Recovery in progress</small>
-          </div>
-
+                return (
+                  <tr
+                    key={act.id}
+                    style={{
+                      borderBottom: "1px solid rgba(255,255,255,0.05)",
+                      background: isDisturbed ? "rgba(239, 68, 68, 0.12)" : "transparent"
+                    }}
+                  >
+                    <td style={{ padding: "8px", fontWeight: "700" }}>{act.id}</td>
+                    <td style={{ padding: "8px" }}>{act.name}</td>
+                    <td style={{ padding: "8px", color: "#94a3b8" }}>{act.discipline}</td>
+                    <td style={{ padding: "8px" }}>Day {base?.earlyFinish || act.earlyFinish}</td>
+                    <td style={{ padding: "8px", fontWeight: deltaEF > 0 ? "700" : "normal", color: deltaEF > 0 ? "#f87171" : "#e2e8f0" }}>
+                      Day {act.earlyFinish} {deltaEF > 0 ? `(+${deltaEF}d)` : ""}
+                    </td>
+                    <td style={{ padding: "8px", color: deltaTF < 0 ? "#fbbf24" : "#94a3b8" }}>
+                      {deltaTF < 0 ? `${deltaTF}d (Eroded)` : `${act.totalFloat}d`}
+                    </td>
+                    <td style={{ padding: "8px" }}>
+                      <span style={{
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        fontSize: "10px",
+                        fontWeight: "700",
+                        background: act.isCritical ? "rgba(239, 68, 68, 0.2)" : "rgba(59, 130, 246, 0.15)",
+                        color: act.isCritical ? "#f87171" : "#93c5fd"
+                      }}>
+                        {act.isCritical ? "CRITICAL" : "NORMAL"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <div className="audit-card">
+      <div className="audit-card" style={{ marginTop: "24px" }}>
 
         <div>
           <p className="section-kicker">AUDIT TRAIL</p>

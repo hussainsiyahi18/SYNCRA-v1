@@ -1,6 +1,5 @@
 import {
   SCHEDULE_ACTIVITIES,
-  TOPOLOGY_VALIDATION,
   getCriticalPath,
   getActiveCriticalPath,
   validateScheduleTopology
