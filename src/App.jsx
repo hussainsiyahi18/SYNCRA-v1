@@ -1,60 +1,128 @@
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
-import { getProjectSummary, SCHEDULE_ACTIVITIES } from "./data/alphaFacilityData";
 import { simulateSchedulePerturbation } from "./data/scheduleSimulation";
 import { evaluateFieldSignal } from "./data/confidenceEngine";
-import { DEMO_SCENARIOS, getScenarioById } from "./data/demoScenarios";
+import { getScenarioById } from "./data/demoScenarios";
+import {
+  getAllProjects,
+  getProjectById,
+  getProjectScheduleState,
+  DEFAULT_PROJECT_ID
+} from "./data/projectsRegistry";
 
 function App() {
   const [userRole, setUserRole] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [view, setView] = useState("overview");
   const [showIntro, setShowIntro] = useState(true);
   const [activeScenarioId, setActiveScenarioId] = useState("cf104-blockage");
-  const projectSummary = getProjectSummary();
 
-  const currentScenario = getScenarioById(activeScenarioId);
-  const currentPerturbation = simulateSchedulePerturbation(SCHEDULE_ACTIVITIES, {
-    activityId: currentScenario.activityId,
-    delayDays: currentScenario.delayDays,
-    newStatus: currentScenario.newStatus,
-    reason: currentScenario.reason
-  });
+  const currentProject = getProjectById(selectedProjectId) || getProjectById(DEFAULT_PROJECT_ID);
 
-  const createEventFromScenario = useCallback((sc, ev) => ({
-    id: sc.id === "cf104-blockage" ? "EV-014" : sc.id === "mp301-delay" ? "EV-015" : "EV-016",
-    activity: sc.activityId,
-    activityName: sc.activityName,
-    location: sc.workfront,
-    discipline: sc.discipline,
-    workfront: sc.workfront,
-    state: sc.newStatus,
-    progress: `${sc.quantityProgress}%`,
-    date: "Day 14",
-    time: "16:42",
-    confidence: ev.confidence,
-    margin: ev.margin,
-    contextMatch: ev.contextMatch,
-    evidence: `${sc.evidenceCount} field photographs`,
-    issue: sc.reason,
-    gateRouting: ev.gateRouting,
-    isAutoAccept: ev.isAutoAccept,
-    gateExplanation: ev.gateExplanation,
-    topCandidate: `${ev.topCandidate.id} (${ev.topCandidate.name})`,
-    secondCandidate: `${ev.secondCandidate.id} (${ev.secondCandidate.name})`,
-    hardChecks: ev.hardChecks
-  }), []);
-
-  const [executionEvent, setExecutionEvent] = useState(() =>
-    createEventFromScenario(getScenarioById("cf104-blockage"), evaluateFieldSignal({ scenarioKey: "cf104-blockage" }))
+  const currentPerturbation = getProjectScheduleState(
+    currentProject,
+    activeScenarioId,
+    simulateSchedulePerturbation,
+    getScenarioById
   );
+
+  const createEventFromScenario = useCallback((sc, ev, prj) => {
+    if (!sc || !ev) {
+      const activeProject = prj || currentProject;
+      const actId = activeProject?.activities?.[2]?.id || "SP-204";
+      const actName = activeProject?.activities?.[2]?.name || "PV Module Stringing & Cabling";
+      const discipline = activeProject?.activities?.[2]?.discipline || "Solar EPC";
+      const workfront = activeProject?.supervisor?.assignedWorkfront || "Block C-08 · Inverter Yard";
+      const statusDate = activeProject?.statusDate || "Day 42 · Shift A";
+
+      return {
+        id: "EV-GENERIC",
+        activity: actId,
+        activityName: actName,
+        location: workfront,
+        discipline: discipline,
+        workfront: workfront,
+        state: "In Progress",
+        progress: "46%",
+        date: statusDate,
+        time: "10:30",
+        confidence: 96,
+        margin: 25,
+        contextMatch: 95,
+        evidence: "3 field photographs",
+        issue: "Standard daily production tracking",
+        gateRouting: "AUTO-ACCEPT",
+        isAutoAccept: true,
+        gateExplanation: "Progress consistent with schedule plan",
+        topCandidate: `${actId} (${actName})`,
+        secondCandidate: activeProject?.activities?.[3]?.id ? `${activeProject.activities[3].id} (${activeProject.activities[3].name})` : "Secondary Workfront",
+        hardChecks: "PASS"
+      };
+    }
+
+    return {
+      id: sc.id === "cf104-blockage" ? "EV-014" : sc.id === "mp301-delay" ? "EV-015" : "EV-016",
+      activity: sc.activityId,
+      activityName: sc.activityName,
+      location: sc.workfront,
+      discipline: sc.discipline,
+      workfront: sc.workfront,
+      state: sc.newStatus,
+      progress: `${sc.quantityProgress}%`,
+      date: "Day 14",
+      time: "16:42",
+      confidence: ev.confidence,
+      margin: ev.margin,
+      contextMatch: ev.contextMatch,
+      evidence: `${sc.evidenceCount} field photographs`,
+      issue: sc.reason,
+      gateRouting: ev.gateRouting,
+      isAutoAccept: ev.isAutoAccept,
+      gateExplanation: ev.gateExplanation,
+      topCandidate: `${ev.topCandidate?.id || sc.activityId} (${ev.topCandidate?.name || sc.activityName})`,
+      secondCandidate: `${ev.secondCandidate?.id || ""} (${ev.secondCandidate?.name || ""})`,
+      hardChecks: ev.hardChecks
+    };
+  }, [currentProject]);
+
+  const [executionEvent, setExecutionEvent] = useState(() => {
+    const sc = getScenarioById("cf104-blockage");
+    const ev = evaluateFieldSignal({ scenarioKey: "cf104-blockage" });
+    return createEventFromScenario(sc, ev, getProjectById(DEFAULT_PROJECT_ID));
+  });
   const [incomingEvent, setIncomingEvent] = useState(null);
 
   const handleScenarioChange = useCallback((newId) => {
     setActiveScenarioId(newId);
     const sc = getScenarioById(newId);
-    const ev = evaluateFieldSignal({ scenarioKey: newId });
-    setExecutionEvent(createEventFromScenario(sc, ev));
-  }, [createEventFromScenario]);
+    if (sc) {
+      const ev = evaluateFieldSignal({ scenarioKey: newId });
+      setExecutionEvent(createEventFromScenario(sc, ev, currentProject));
+    }
+  }, [createEventFromScenario, currentProject]);
+
+  const handleSelectProject = (projectId) => {
+    setSelectedProjectId(projectId);
+    const prj = getProjectById(projectId);
+    if (prj && prj.defaultScenarioId) {
+      setActiveScenarioId(prj.defaultScenarioId);
+      const sc = getScenarioById(prj.defaultScenarioId);
+      if (sc) {
+        const ev = evaluateFieldSignal({ scenarioKey: prj.defaultScenarioId });
+        setExecutionEvent(createEventFromScenario(sc, ev, prj));
+      }
+    } else {
+      setActiveScenarioId(null);
+      setExecutionEvent(createEventFromScenario(null, null, prj));
+    }
+
+    if (userRole === "domain") {
+      setView("domain");
+    } else {
+      setView("overview");
+    }
+  };
 
   useEffect(() => {
     const channel = new BroadcastChannel("syncra-project-events");
@@ -87,26 +155,43 @@ function App() {
       setIncomingEvent(null);
     }, 4200);
   };
-if (showIntro) {
-  return <SyncraIntro onComplete={() => setShowIntro(false)} />;
-}
+
+  if (showIntro) {
+    return <SyncraIntro onComplete={() => setShowIntro(false)} />;
+  }
 
   if (!userRole) {
-  return (
-    <LoginView
-      onLogin={(role) => {
-        const normalizedRole = (role || "").trim().toLowerCase();
-        setUserRole(normalizedRole);
+    return (
+      <LoginView
+        onLogin={(role, userObj) => {
+          const normalizedRole = (role || "").trim().toLowerCase();
+          setUserRole(normalizedRole);
+          setCurrentUser(userObj || {
+            id: normalizedRole === "domain" ? "domain01" : "manager01",
+            name: normalizedRole === "domain" ? "Arjun Sharma" : "Ravi Mehta",
+            role: normalizedRole,
+            roleTitle: normalizedRole === "domain" ? "Lead Domain Supervisor" : "Project Manager"
+          });
+          setSelectedProjectId(null);
+        }}
+      />
+    );
+  }
 
-        if (normalizedRole === "domain") {
-          setView("domain");
-        } else {
-          setView("overview");
-        }
-      }}
-    />
-  );
-}
+  if (!selectedProjectId) {
+    return (
+      <WorkspaceDirectoryView
+        user={currentUser}
+        onSelectProject={handleSelectProject}
+        onLogout={() => {
+          setUserRole(null);
+          setCurrentUser(null);
+          setSelectedProjectId(null);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -118,10 +203,20 @@ if (showIntro) {
           </div>
         </div>
 
-        <div className="project-switcher">
-          <span className="eyebrow">PROJECT</span>
-          <div className="project-name">{projectSummary.projectName} {projectSummary.phase}</div>
-          <div className="project-meta">{projectSummary.location} · Day {projectSummary.statusDate} ({projectSummary.status})</div>
+        {/* ACTIVE PROJECT CONTEXT BADGE */}
+        <div className="sidebar-project-badge">
+          <span className="badge-kicker">PROJECT CONTEXT</span>
+          <strong className="badge-project-name">{currentProject.name}</strong>
+          <small className="badge-project-loc">{currentProject.location} · {currentProject.statusDate}</small>
+          <button
+            id="btn-sidebar-switch-project"
+            type="button"
+            className="sidebar-switch-btn"
+            onClick={() => setSelectedProjectId(null)}
+            title="Return to Workspace Project Directory"
+          >
+            ⇄ Switch Project
+          </button>
         </div>
 
         <nav className="navigation">
@@ -247,6 +342,8 @@ if (showIntro) {
   type="button"
   onClick={() => {
     setUserRole(null);
+    setCurrentUser(null);
+    setSelectedProjectId(null);
     setView("overview");
   }}
 >
@@ -259,106 +356,137 @@ if (showIntro) {
       <header className="topbar">
         <div>
           <div className="breadcrumb">
-            Projects / Alpha Facility
+            <button
+              type="button"
+              className="breadcrumb-root-btn"
+              onClick={() => setSelectedProjectId(null)}
+              title="Return to Workspace Project Directory"
+            >
+              Projects
+            </button>
+            <span className="breadcrumb-separator">/</span>
+            <strong>{currentProject.name}</strong>
+            <span className="breadcrumb-location">({currentProject.location})</span>
           </div>
           <h1>
-  {view === "overview"
-    ? "Project Overview"
-    : view === "intelligence"
-    ? "SYNCRA Intelligence"
-    : view === "impact"
-    ? "Impact Analysis"
-    : view === "recovery"
-    ? "Recovery Intelligence"
-    : view === "domain"
-    ? "Domain Supervisor"
-    : "Updated Project State"}
-</h1>
+            {view === "overview"
+              ? "Project Overview"
+              : view === "intelligence"
+              ? "SYNCRA Intelligence"
+              : view === "impact"
+              ? "Impact Analysis"
+              : view === "recovery"
+              ? "Recovery Intelligence"
+              : view === "domain"
+              ? "Domain Supervisor"
+              : "Updated Project State"}
+          </h1>
         </div>
 
         <div className="topbar-actions">
+          <button
+            id="btn-switch-project"
+            type="button"
+            className="topbar-switch-project-btn"
+            onClick={() => setSelectedProjectId(null)}
+            title="Return to Workspace Project Directory"
+          >
+            <span>⇄</span> Switch Project
+          </button>
+
           <div className="status-pill">
             <span className="status-dot"></span>
-            Project Active
+            {currentProject.status}
           </div>
 
           <button className="notification-button">○</button>
         </div>
       </header>
 
-      {/* PHASE 2 INTERACTIVE DEMO SCENARIO SWITCHER */}
-      <div className="scenario-switcher-bar global-demo-switcher" style={{ margin: "16px 28px 0 28px" }}>
-        <span className="switcher-label">⚡ PHASE 2 DEMO SCENARIO:</span>
-        <div className="switcher-chips">
-          {DEMO_SCENARIOS.map((sc) => (
-            <button
-              key={sc.id}
-              type="button"
-              className={`switcher-chip ${activeScenarioId === sc.id ? "active" : ""}`}
-              onClick={() => handleScenarioChange(sc.id)}
-            >
-              <strong>{sc.name}</strong>
-              <small style={{
-                marginLeft: "8px",
-                opacity: 0.9,
-                padding: "2px 6px",
-                borderRadius: "3px",
-                background: sc.badgeType === "danger" ? "rgba(239, 68, 68, 0.25)" : sc.badgeType === "warning" ? "rgba(234, 179, 8, 0.25)" : "rgba(147, 51, 234, 0.25)",
-                color: sc.badgeType === "danger" ? "#fca5a5" : sc.badgeType === "warning" ? "#fde047" : "#d8b4fe"
-              }}>
-                {sc.badge}
-              </small>
-            </button>
-          ))}
+      {/* SECONDARY DEMO SIMULATION SANDBOX (Scoped exclusively to projects with demo simulation) */}
+      {currentProject.capabilities.hasSimulationSandbox ? (
+        <div className="demo-simulation-drawer">
+          <div className="drawer-header">
+            <span className="drawer-demo-tag">SIMULATION SANDBOX</span>
+            <strong className="drawer-heading">Inject Execution Disturbance</strong>
+            <small className="drawer-sub">Phase 2 Closed-Loop Benchmarks · {currentProject.name}</small>
+          </div>
+
+          <div className="drawer-scenario-chips">
+            {currentProject.demoScenarios.map((sc) => (
+              <button
+                key={sc.id}
+                type="button"
+                className={`drawer-chip ${activeScenarioId === sc.id ? "active" : ""}`}
+                onClick={() => handleScenarioChange(sc.id)}
+              >
+                <span>{sc.badgeType === "danger" ? "⚡" : sc.badgeType === "warning" ? "⏳" : "⚠️"}</span>
+                <span className="chip-name">{sc.name}</span>
+                <span className="chip-badge">{sc.badge}</span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="production-status-strip">
+          <span className="prod-badge">PRODUCTION RUNTIME</span>
+          <span>{currentProject.name} · Operating within standard CPM control thresholds (Baseline Day {currentProject.baselineFinishDay}).</span>
+        </div>
+      )}
 
       <main>
       {view === "overview" ? (
         <section className="content">
           <div className="hero-row">
             <div>
-              <p className="section-kicker">CURRENT STATE</p>
-              <h2>Attention required</h2>
+              <p className="section-kicker">{currentProject.code} · {currentProject.sector.toUpperCase()}</p>
+              <h2>{currentProject.health}</h2>
               <p className="hero-description">
-                SYNCRA has identified changes that may affect the current
-                project forecast.
+                {currentPerturbation.projectDelayDays > 0
+                  ? `SYNCRA has identified critical-path variances affecting ${currentProject.name}. Review intelligence and recovery options.`
+                  : `${currentProject.name} is tracking to baseline milestones without critical exposure.`}
               </p>
             </div>
 
-            <button
-              className="primary-button"
-              onClick={() => setView("intelligence")}
-            >
-              Review intelligence <span>→</span>
-            </button>
+            {currentPerturbation.projectDelayDays > 0 && (
+              <button
+                className="primary-button"
+                onClick={() => setView("intelligence")}
+              >
+                Review intelligence <span>→</span>
+              </button>
+            )}
           </div>
 
           <div className="metrics-grid">
             <div className="metric-card">
               <div className="metric-label">PHYSICAL PROGRESS</div>
-              <div className="metric-value">68.4%</div>
-              <div className="metric-note positive">↑ 3.2% this week</div>
+              <div className="metric-value">{currentProject.summaryStats.physicalProgress}%</div>
+              <div className="metric-note positive">{currentProject.summaryStats.progressTrend}</div>
             </div>
 
             <div className="metric-card">
               <div className="metric-label">CURRENT FORECAST</div>
-              <div className="metric-value">+3 days</div>
-              <div className="metric-note warning">
-                vs approved baseline
+              <div className="metric-value">
+                {currentPerturbation.projectDelayDays > 0 ? `+${currentPerturbation.projectDelayDays} days` : "0 days"}
+              </div>
+              <div className={`metric-note ${currentPerturbation.projectDelayDays > 0 ? "warning" : "positive"}`}>
+                vs Day {currentProject.baselineFinishDay} baseline
               </div>
             </div>
 
             <div className="metric-card">
               <div className="metric-label">CRITICAL ACTIVITIES</div>
-              <div className="metric-value">{projectSummary.activeCriticalCount}</div>
-              <div className="metric-note">2 currently exposed · {projectSummary.activeCriticalPath.slice(0, 3).join(" → ")}...</div>
+              <div className="metric-value">{currentProject.summaryStats.activeCriticalCount}</div>
+              <div className="metric-note">{currentProject.summaryStats.criticalChainPreview}</div>
             </div>
 
             <div className="metric-card">
               <div className="metric-label">OPEN DECISIONS</div>
-              <div className="metric-value">2</div>
-              <div className="metric-note">1 requires attention</div>
+              <div className="metric-value">{currentPerturbation.projectDelayDays > 0 ? 1 : 0}</div>
+              <div className="metric-note">
+                {currentPerturbation.projectDelayDays > 0 ? "Requires manager authority" : "All paths clear"}
+              </div>
             </div>
           </div>
 
@@ -366,59 +494,23 @@ if (showIntro) {
             <section className="panel attention-panel">
               <div className="panel-header">
                 <div>
-                  <p className="section-kicker">SIGNAL</p>
-                  <h3>Attention required</h3>
+                  <p className="section-kicker">PROJECT SIGNALS</p>
+                  <h3>Active Site Conditions</h3>
                 </div>
-                <span className="count-badge">03</span>
+                <span className="count-badge">{String(currentProject.attentionItems.length).padStart(2, "0")}</span>
               </div>
 
-              <div className="attention-item">
-                <div className="severity high"></div>
-                <div className="attention-content">
-                  <div className="attention-title">
-                    CF-104 · Unexpected site condition
+              {currentProject.attentionItems.map((item) => (
+                <div key={item.id} className="attention-item">
+                  <div className={`severity ${item.severity}`}></div>
+                  <div className="attention-content">
+                    <div className="attention-title">{item.title}</div>
+                    <div className="attention-description">{item.description}</div>
+                    <div className="attention-meta">{item.meta}</div>
                   </div>
-                  <div className="attention-description">
-                    Foundation excavation blocked at Grid A-14.
-                  </div>
-                  <div className="attention-meta">
-                    Potential testing milestone exposure
-                  </div>
+                  <span className="arrow">→</span>
                 </div>
-                <span className="arrow">→</span>
-              </div>
-
-              <div className="attention-item">
-                <div className="severity medium"></div>
-                <div className="attention-content">
-                  <div className="attention-title">
-                    EX-07 · Equipment constraint
-                  </div>
-                  <div className="attention-description">
-                    Excavator unavailable for current workfront.
-                  </div>
-                  <div className="attention-meta">
-                    Resource conflict detected
-                  </div>
-                </div>
-                <span className="arrow">→</span>
-              </div>
-
-              <div className="attention-item">
-                <div className="severity medium"></div>
-                <div className="attention-content">
-                  <div className="attention-title">
-                    Instrumentation · Readiness gap
-                  </div>
-                  <div className="attention-description">
-                    Calibration remains incomplete.
-                  </div>
-                  <div className="attention-meta">
-                    Integrated testing exposed
-                  </div>
-                </div>
-                <span className="arrow">→</span>
-              </div>
+              ))}
             </section>
 
             <section className="panel forecast-panel">
@@ -427,7 +519,7 @@ if (showIntro) {
                   <p className="section-kicker">FORECAST</p>
                   <h3>Project timeline</h3>
                 </div>
-                <span className="muted-label">CURRENT</span>
+                <span className="muted-label">{currentProject.statusDate}</span>
               </div>
 
               <div className="timeline">
@@ -435,7 +527,7 @@ if (showIntro) {
                   <span className="timeline-label">Baseline</span>
                   <div className="timeline-track">
                     <div className="timeline-baseline"></div>
-                    <span className="timeline-date">30 Sep</span>
+                    <span className="timeline-date">Day {currentProject.baselineFinishDay}</span>
                   </div>
                 </div>
 
@@ -443,7 +535,9 @@ if (showIntro) {
                   <span className="timeline-label">Forecast</span>
                   <div className="timeline-track">
                     <div className="timeline-forecast"></div>
-                    <span className="timeline-date">03 Oct</span>
+                    <span className={`timeline-date ${currentPerturbation.projectDelayDays > 0 ? "red-text" : "green-text"}`}>
+                      Day {currentProject.baselineFinishDay + currentPerturbation.projectDelayDays}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -451,12 +545,12 @@ if (showIntro) {
               <div className="forecast-summary">
                 <div>
                   <span className="summary-label">Variance</span>
-                  <strong>+3 days</strong>
+                  <strong>{currentPerturbation.projectDelayDays > 0 ? `+${currentPerturbation.projectDelayDays} days` : "0 days"}</strong>
                 </div>
 
                 <div>
                   <span className="summary-label">Confidence</span>
-                  <strong>High</strong>
+                  <strong>{currentPerturbation.projectDelayDays > 0 ? "Verified" : "Nominal"}</strong>
                 </div>
               </div>
             </section>
@@ -474,25 +568,29 @@ if (showIntro) {
           onBack={() => setView("intelligence")}
           onRecovery={() => setView("recovery")}
           perturbationResult={currentPerturbation}
+          project={currentProject}
         />
       ) : view === "recovery" ? (
         <RecoveryView
           onBack={() => setView("impact")}
           onApproved={() => setView("updated")}
           perturbationResult={currentPerturbation}
+          project={currentProject}
         />
       ) : view === "domain" ? (
         <DomainSupervisorView
-          key={activeScenarioId}
+          key={`${currentProject.id}-${activeScenarioId || "default"}`}
+          project={currentProject}
           onPublish={publishExecutionEvent}
           activeScenarioId={activeScenarioId}
           onSelectScenario={handleScenarioChange}
         />
       ) : (
-  <UpdatedStateView
-    perturbationResult={currentPerturbation}
-  />
-)}
+        <UpdatedStateView
+          perturbationResult={currentPerturbation}
+          project={currentProject}
+        />
+      )}
       </main>
     </div>
   );
@@ -569,7 +667,7 @@ function SyncraIntro({ onComplete }) {
         <div className="intro-telemetry-strip">
           <span className="telemetry-item">
             <span className="telemetry-indicator"></span>
-            NETWORK: <b>ALPHA FACILITY (ASSAM)</b>
+            NETWORK: <b>ENTERPRISE CAPITAL PORTFOLIO</b>
           </span>
           <span className="telemetry-sep">/</span>
           <span className="telemetry-item">
@@ -659,6 +757,140 @@ function SyncraIntro({ onComplete }) {
   );
 }
 
+function WorkspaceDirectoryView({ user, onSelectProject, onLogout }) {
+  const projects = getAllProjects();
+
+  return (
+    <div className="workspace-shell">
+      {/* GLOBAL ENTERPRISE TOPBAR */}
+      <header className="workspace-topbar">
+        <div className="workspace-brand">
+          <div className="brand-mark">S</div>
+          <div>
+            <div className="brand-name">SYNCRA</div>
+            <div className="brand-subtitle">Enterprise Capital Portfolio</div>
+          </div>
+        </div>
+
+        <div className="workspace-user-strip">
+          <div className="user-avatar">{user?.role === "domain" ? "DS" : "RM"}</div>
+          <div className="user-info">
+            <div className="user-name">{user?.name || "Ravi Mehta"}</div>
+            <div className="user-role">{user?.roleTitle || "Project Manager"}</div>
+          </div>
+          <button
+            id="btn-workspace-signout"
+            type="button"
+            className="workspace-signout-btn"
+            onClick={onLogout}
+          >
+            Sign out
+          </button>
+        </div>
+      </header>
+
+      {/* PORTFOLIO CONTENT CONTAINER */}
+      <main className="workspace-content">
+        <div className="workspace-intro-hero">
+          <div>
+            <p className="section-kicker">CAPITAL PROJECTS DIRECTORY</p>
+            <h2>Enterprise Projects Workspace</h2>
+            <p className="workspace-sub">
+              Select an active capital project to inspect execution truth, CPM dependency networks, and living schedules.
+            </p>
+          </div>
+
+          <div className="portfolio-stats-pill">
+            <div className="stat-unit">
+              <span>PORTFOLIO SIZE</span>
+              <strong>{projects.length} Capital Projects</strong>
+            </div>
+            <div className="stat-unit-divider"></div>
+            <div className="stat-unit">
+              <span>ACTIVE LOCATIONS</span>
+              <strong>Assam · Rajasthan</strong>
+            </div>
+            <div className="stat-unit-divider"></div>
+            <div className="stat-unit">
+              <span>SYSTEM HEALTH</span>
+              <strong className="amber-text">1 Alert · 1 Nominal</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* PROJECTS GRID */}
+        <div className="workspace-projects-grid">
+          {projects.map((proj) => (
+            <div key={proj.id} className="workspace-project-card">
+              <div className="card-top-row">
+                <div>
+                  <span className="project-code-tag">{proj.code}</span>
+                  <span className="project-sector-tag">{proj.sector}</span>
+                </div>
+                <span className={`project-health-badge ${proj.healthTone}`}>
+                  {proj.health}
+                </span>
+              </div>
+
+              <div className="card-main-title">
+                <h3>{proj.name}</h3>
+                <div className="project-location-pin">
+                  <span>📍</span>
+                  <strong>{proj.location}</strong>
+                  <span className="client-sub">• {proj.client}</span>
+                </div>
+              </div>
+
+              <div className="card-meta-grid">
+                <div className="meta-box">
+                  <span>STATUS DATE</span>
+                  <strong>{proj.statusDate}</strong>
+                </div>
+                <div className="meta-box">
+                  <span>BASELINE FINISH</span>
+                  <strong>Day {proj.baselineFinishDay}</strong>
+                </div>
+                <div className="meta-box">
+                  <span>FORECAST FINISH</span>
+                  <strong className={proj.forecastFinishDay > proj.baselineFinishDay ? "red-text" : "green-text"}>
+                    Day {proj.forecastFinishDay} {proj.forecastFinishDay > proj.baselineFinishDay ? `(+${proj.forecastFinishDay - proj.baselineFinishDay}d)` : "(On Time)"}
+                  </strong>
+                </div>
+                <div className="meta-box">
+                  <span>ACTIVE NETWORK</span>
+                  <strong>{proj.activities.length} WBS Activities</strong>
+                </div>
+              </div>
+
+              <div className="card-critical-preview">
+                <span>DRIVING CRITICAL CHAIN:</span>
+                <code>{proj.summaryStats.criticalChainPreview}</code>
+              </div>
+
+              <div className="card-footer-row">
+                <div className="supervisor-tag">
+                  <span>Lead Supervisor:</span> <strong>{proj.supervisor.name}</strong>
+                  <small>({proj.supervisor.assignedWorkfront})</small>
+                </div>
+
+                <button
+                  id={`btn-open-${proj.id}`}
+                  type="button"
+                  className="open-project-btn"
+                  onClick={() => onSelectProject(proj.id)}
+                >
+                  <span>Open Project Workspace</span>
+                  <span className="btn-arrow">→</span>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}
+
 function LoginView({ onLogin }) {
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
@@ -666,12 +898,18 @@ function LoginView({ onLogin }) {
 
   const MOCK_USERS = {
     manager01: {
-      password: "syncra123",
+      id: "manager01",
+      name: "Ravi Mehta",
       role: "manager",
+      roleTitle: "Project Manager",
+      password: "syncra123",
     },
     domain01: {
-      password: "syncra123",
+      id: "domain01",
+      name: "Arjun Sharma",
       role: "domain",
+      roleTitle: "Lead Domain Supervisor",
+      password: "syncra123",
     },
   };
 
@@ -686,54 +924,29 @@ function LoginView({ onLogin }) {
     }
 
     setError("");
-    onLogin(user.role);
+    onLogin(user.role, user);
   };
 
   return (
     <div className="login-shell">
-
       <div className="login-card">
-
         <div className="login-brand">
-          <div className="login-brand-mark">
-            S
-          </div>
-
+          <div className="login-brand-mark">S</div>
           <div>
-            <div className="login-brand-name">
-              SYNCRA
-            </div>
-
-            <div className="login-brand-subtitle">
-              Execution Intelligence
-            </div>
+            <div className="login-brand-name">SYNCRA</div>
+            <div className="login-brand-subtitle">Execution Intelligence</div>
           </div>
         </div>
 
         <div className="login-heading">
-          <p className="section-kicker">
-            ALPHA FACILITY
-          </p>
-
-          <h1>
-            Sign in to SYNCRA
-          </h1>
-
-          <p>
-            Access your project workspace.
-          </p>
+          <p className="section-kicker">ENTERPRISE ACCESS</p>
+          <h1>Sign in to SYNCRA</h1>
+          <p>Unified EPC Execution Intelligence & Project Controls</p>
         </div>
 
-        <form
-          className="login-form"
-          onSubmit={handleLogin}
-        >
-
+        <form className="login-form" onSubmit={handleLogin}>
           <div className="login-field">
-            <label htmlFor="user-id">
-              USER ID
-            </label>
-
+            <label htmlFor="user-id">USER ID</label>
             <input
               id="user-id"
               type="text"
@@ -748,10 +961,7 @@ function LoginView({ onLogin }) {
           </div>
 
           <div className="login-field">
-            <label htmlFor="password">
-              PASSWORD
-            </label>
-
+            <label htmlFor="password">PASSWORD</label>
             <input
               id="password"
               type="password"
@@ -772,45 +982,41 @@ function LoginView({ onLogin }) {
             </div>
           )}
 
-          <button
-            className="login-button"
-            type="submit"
-          >
+          <button className="login-button" type="submit">
             Sign in <span>→</span>
           </button>
-
         </form>
 
         <div className="login-quick-roles">
           <span className="section-kicker">QUICK SIGN-IN FOR DEMO</span>
           <div className="quick-role-buttons">
             <button
+              id="btn-quick-login-manager"
               type="button"
               className="quick-role-btn"
-              onClick={() => onLogin("manager")}
+              onClick={() => onLogin("manager", MOCK_USERS.manager01)}
             >
               <span>👔</span>
               <div>
                 <strong>Project Manager</strong>
-                <small>Ravi Mehta (Overview, CPM)</small>
+                <small>Ravi Mehta · Enterprise PM</small>
               </div>
             </button>
             <button
+              id="btn-quick-login-domain"
               type="button"
               className="quick-role-btn"
-              onClick={() => onLogin("domain")}
+              onClick={() => onLogin("domain", MOCK_USERS.domain01)}
             >
               <span>🏗️</span>
               <div>
                 <strong>Domain Supervisor</strong>
-                <small>Arjun Sharma (Field Reports)</small>
+                <small>Arjun Sharma · Field Supervisor</small>
               </div>
             </button>
           </div>
         </div>
-
       </div>
-
     </div>
   );
 }
@@ -1344,10 +1550,11 @@ function IntelligenceView({
   );
 }
 
-function ImpactView({ onBack, onRecovery, perturbationResult }) {
+function ImpactView({ onBack, onRecovery, perturbationResult, project }) {
   const result = perturbationResult || simulateSchedulePerturbation();
   const target = result.targetNode;
-  const finishExposure = result.milestoneExposure["M-03"];
+  const finishExposure = result?.milestoneExposure ? Object.values(result.milestoneExposure)[0] : { perturbedEF: 30 };
+  const baselineFinish = project ? project.baselineFinishDay : 30;
   const isDelayed = result.isProjectFinishDelayed;
 
   return (
@@ -1361,7 +1568,7 @@ function ImpactView({ onBack, onRecovery, perturbationResult }) {
         <p className="section-kicker">IMPACT ANALYSIS · DYNAMIC CPM ENGINE</p>
         <h2>What does this state affect?</h2>
         <p>
-          SYNCRA recalculates the living 14-node schedule network to trace exact float erosion and downstream milestone variance.
+          SYNCRA recalculates the living schedule network ({project?.name || "Project"}) to trace exact float erosion and downstream milestone variance.
         </p>
       </div>
 
@@ -1409,7 +1616,7 @@ function ImpactView({ onBack, onRecovery, perturbationResult }) {
           {result.exposedCriticalChain.map((node, idx) => (
             <div key={node.id} style={{ display: "contents" }}>
               <div className={`impact-node ${idx === 0 ? "blocked" : "exposed"}`}>
-                <span>{idx === 0 ? "DISTURBANCE" : node.id === "M-03" ? "TERMINAL MILESTONE" : "DRIVING CHAIN"}</span>
+                <span>{idx === 0 ? "DISTURBANCE" : (node.id === "M-03" || node.id === "M-04" || idx === result.exposedCriticalChain.length - 1) ? "TERMINAL MILESTONE" : "DRIVING CHAIN"}</span>
                 <strong>{node.id}</strong>
                 <small>{node.name} (EF: Day {node.earlyFinish})</small>
               </div>
@@ -1451,8 +1658,8 @@ function ImpactView({ onBack, onRecovery, perturbationResult }) {
             <span>Project finish impact</span>
             <strong className={isDelayed ? "red-text" : "green-text"}>
               {isDelayed
-                ? `Day 30 ➔ Day ${finishExposure.perturbedEF} (+${result.projectDelayDays}d)`
-                : "None (Day 30 Preserved)"}
+                ? `Day ${baselineFinish} ➔ Day ${finishExposure.perturbedEF} (+${result.projectDelayDays}d)`
+                : `None (Day ${baselineFinish} Preserved)`}
             </strong>
           </div>
         </div>
@@ -1463,8 +1670,8 @@ function ImpactView({ onBack, onRecovery, perturbationResult }) {
 
           <p className="impact-copy">
             {isDelayed
-              ? `${target.id} has 0 days of available float on the active critical chain. The +${result.disturbance.delayDays}-day delay directly propagates downstream through ${result.exposedCriticalChain.slice(1, -1).map(n => n.id).join(" → ")} to Substantial Completion (M-03), pushing project delivery from Day 30 to Day ${finishExposure.perturbedEF}.`
-              : `${target.id} possessed available total float. The +${result.disturbance.delayDays}-day delay was absorbed by its float buffer (${result.deltaFloatMap[target.id]}d delta), protecting downstream commissioning and anchoring project completion on Day 30.`}
+              ? `${target.id} has 0 days of available float on the active critical chain. The +${result.disturbance.delayDays}-day delay directly propagates downstream through ${result.exposedCriticalChain.slice(1, -1).map(n => n.id).join(" → ")} to completion milestone, pushing project delivery from Day ${baselineFinish} to Day ${finishExposure.perturbedEF}.`
+              : `${target.id} consumed available total float buffer without downstream critical slippage. Milestone delivery remains protected at Day ${baselineFinish}.`}
           </p>
 
           <div className="impact-rule">
@@ -1503,12 +1710,14 @@ function ImpactView({ onBack, onRecovery, perturbationResult }) {
   );
 }
 
-function RecoveryView({ onBack, onApproved, perturbationResult }) {
+function RecoveryView({ onBack, onApproved, perturbationResult, project }) {
   const [selectedPlan, setSelectedPlan] = useState(null);
   const result = perturbationResult || simulateSchedulePerturbation();
   const targetId = result.targetNode.id;
   const delayDays = result.projectDelayDays;
-  const finishDay = result.milestoneExposure["M-03"].perturbedEF;
+  const finishExposure = result?.milestoneExposure ? Object.values(result.milestoneExposure)[0] : null;
+  const baselineFinish = project ? project.baselineFinishDay : 30;
+  const finishDay = finishExposure ? finishExposure.perturbedEF : baselineFinish;
 
   const plans = [
     {
@@ -1516,7 +1725,7 @@ function RecoveryView({ onBack, onApproved, perturbationResult }) {
       title: "Resequence work",
       description: `Move an independent downstream workfront forward while ${targetId} is constrained.`,
       forecast: "0 days",
-      schedule: "Protects current finish at Day 30",
+      schedule: `Protects current finish at Day ${baselineFinish}`,
       resource: "Low",
       risk: "Moderate",
       consequence: "Uses available workfront capacity",
@@ -1527,7 +1736,7 @@ function RecoveryView({ onBack, onApproved, perturbationResult }) {
       title: "Shift resources",
       description: `Reassign available capacity from an off-critical workfront to recover ${targetId}.`,
       forecast: "+1 day",
-      schedule: "Minor finish exposure (Day 31)",
+      schedule: `Minor finish exposure (Day ${baselineFinish + 1})`,
       resource: "Medium",
       risk: "Low",
       consequence: "Creates pressure on donor workfront",
@@ -1567,22 +1776,26 @@ function RecoveryView({ onBack, onApproved, perturbationResult }) {
       <div className="recovery-context">
         <div>
           <span>TRIGGER</span>
-          <strong>CF-104 · Blocked</strong>
+          <strong>{result.targetNode.id} · {result.targetNode.status}</strong>
         </div>
 
         <div>
           <span>AVAILABLE FLOAT</span>
-          <strong className="amber-text">1 day</strong>
+          <strong className={result.targetNode.totalFloat === 0 ? "amber-text" : "green-text"}>
+            {result.targetNode.totalFloat} {result.targetNode.totalFloat === 1 ? "day" : "days"}
+          </strong>
         </div>
 
         <div>
           <span>EXPOSED CHAIN</span>
-          <strong>MF-218 → TC-401</strong>
+          <strong>{result.exposedCriticalChain.slice(0, 3).map(n => n.id).join(" → ")}...</strong>
         </div>
 
         <div>
           <span>CURRENT FORECAST</span>
-          <strong>03 Oct</strong>
+          <strong className={result.projectDelayDays > 0 ? "red-text" : "green-text"}>
+            Day {finishDay} {result.projectDelayDays > 0 ? `(+${result.projectDelayDays}d)` : "(On Time)"}
+          </strong>
         </div>
       </div>
 
@@ -1672,17 +1885,17 @@ function RecoveryView({ onBack, onApproved, perturbationResult }) {
         <div className="reasoning-factors">
           <div>
             <span>FLOAT</span>
-            <strong>Only 1 day</strong>
+            <strong>{result.targetNode.totalFloat}d remaining</strong>
           </div>
 
           <div>
-            <span>RESOURCE</span>
-            <strong>EX-07 unavailable</strong>
+            <span>DISTURBANCE</span>
+            <strong>{result.targetNode.status}</strong>
           </div>
 
           <div>
             <span>DOWNSTREAM</span>
-            <strong>Testing exposed</strong>
+            <strong>{result.erodedActivities.length} eroded</strong>
           </div>
         </div>
       </div>
@@ -1837,17 +2050,21 @@ const SCENARIO_DATA = {
   },
 };
 
-function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario }) {
-  const initialScenario = getScenarioById(activeScenarioId) || DEMO_SCENARIOS[0];
+function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, project }) {
+  const isDemoProject = Boolean(project?.capabilities?.hasSimulationSandbox);
+  const initialScenario = isDemoProject ? (getScenarioById(activeScenarioId) || DEMO_SCENARIOS[0]) : null;
   const [submitted, setSubmitted] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
-  const [reportNote, setReportNote] = useState(initialScenario.reportText);
-  const [quantityProgress, setQuantityProgress] = useState(initialScenario.quantityProgress);
-  const [executionStatus, setExecutionStatus] = useState(initialScenario.newStatus);
+  const [reportNote, setReportNote] = useState(() => {
+    if (isDemoProject && initialScenario) return initialScenario.reportText;
+    return `Daily production report [${project?.statusDate || "Day 42"}]: PV module stringing on Block C-08 progressing at 1.4 MWp/day. Inverter foundation pads ready for hookup. Weather conditions clear (GHI 5.9 kWh/m²/day).`;
+  });
+  const [quantityProgress, setQuantityProgress] = useState(() => (isDemoProject && initialScenario ? initialScenario.quantityProgress : 46));
+  const [executionStatus, setExecutionStatus] = useState(() => (isDemoProject && initialScenario ? initialScenario.newStatus : "In Progress"));
   const [evidenceAttached, setEvidenceAttached] = useState(true);
-  const [evidenceCount, setEvidenceCount] = useState(initialScenario.evidenceCount);
+  const [evidenceCount, setEvidenceCount] = useState(() => (isDemoProject && initialScenario ? initialScenario.evidenceCount : 3));
   const [activeTab, setActiveTab] = useState("extracted"); // 'extracted' | 'match' | 'context' | 'evidence'
   const [gateScenario, setGateScenario] = useState(activeScenarioId === "ambiguous-civil" ? "ambiguity" : "auto-accept");
   const [humanActionStatus, setHumanActionStatus] = useState(null); // feedback message for human actions
@@ -1860,19 +2077,88 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario })
       setIsRecording(true);
       setTimeout(() => {
         setIsRecording(false);
-        setReportNote(
-          "Voice transcript [16:42]: Excavation halted at Grid A-14. Struck massive buried concrete obstruction. EX-07 unable to dig. Progress 62%. Need breaker or reroute."
-        );
-        setExecutionStatus("Blocked");
-        setQuantityProgress(62);
+        if (isDemoProject) {
+          setReportNote(
+            "Voice transcript [16:42]: Excavation halted at Grid A-14. Struck massive buried concrete obstruction. EX-07 unable to dig. Progress 62%. Need breaker or reroute."
+          );
+          setExecutionStatus("Blocked");
+          setQuantityProgress(62);
+        } else {
+          setReportNote(
+            `Voice transcript [10:30]: ${project?.name || "Thar Solar"} - PV module stringing on Block C-08 running normal. Inverter hookup scheduled. Progress 46%.`
+          );
+          setExecutionStatus("In Progress");
+          setQuantityProgress(46);
+        }
       }, 2200);
     }
   };
 
-  const currentScenario = SCENARIO_DATA[gateScenario] || SCENARIO_DATA["auto-accept"];
+  const currentScenario = (() => {
+    if (isDemoProject) {
+      return SCENARIO_DATA[gateScenario] || SCENARIO_DATA["auto-accept"];
+    }
+    const act = project?.activities?.[2] || { id: "SP-204", name: "PV Module Stringing & Cabling", discipline: "Solar EPC" };
+    const secAct = project?.activities?.[3] || { id: "SP-208", name: "Inverter Station Hookup" };
+    const loc = project?.supervisor?.assignedWorkfront || "Block C-08 · Inverter Yard";
+
+    return {
+      confidence: 96,
+      margin: 25,
+      contextMatch: 95,
+      topCandidate: `${act.id} (${act.name})`,
+      topScore: 96,
+      secondCandidate: `${secAct.id} (${secAct.name})`,
+      secondScore: 71,
+      cpmCheck: "Consistent (PASS)",
+      depCheck: "Consistent (PASS)",
+      locCheck: `Consistent (${loc}) (PASS)`,
+      resCheck: "Consistent (Verified) (PASS)",
+      eviCheck: "Consistent (Photos corroborate) (PASS)",
+      hardCheckPass: true,
+      materialContradiction: false,
+      gateRouting: "AUTO-ACCEPT",
+      gateClass: "gate-auto-accept",
+      gateExplanation:
+        "Confidence ≥90% (96%) AND Context Match ≥90% (95%) AND Margin ≥15 pp (+25 pp) AND no hard-check failure = AUTO-ACCEPT. Routine high-confidence execution event accepted without forcing confirmation.",
+      systemAction: "Create accepted execution event; retain scores, rationale and evidence provenance.",
+    };
+  })();
 
   // Publish event callback
   const publishCurrentEvent = useCallback((scenarioToUse) => {
+    if (!isDemoProject) {
+      const activeAct = project?.activities?.[2] || { id: "SP-204", name: "PV Module Stringing & Cabling", discipline: "Solar EPC" };
+      const secAct = project?.activities?.[3] || { id: "SP-208", name: "Inverter Station Hookup" };
+      const loc = project?.supervisor?.assignedWorkfront || "Block C-08 · Inverter Yard";
+
+      const event = {
+        id: "EV-042",
+        activity: activeAct.id,
+        activityName: activeAct.name,
+        location: loc,
+        discipline: activeAct.discipline,
+        workfront: loc,
+        state: executionStatus,
+        progress: `${quantityProgress}%`,
+        date: project?.statusDate || "Day 42",
+        time: "10:30",
+        confidence: 96,
+        margin: 25,
+        contextMatch: 95,
+        evidence: `${evidenceCount} field photographs`,
+        issue: "Standard daily production tracking",
+        gateRouting: "AUTO-ACCEPT",
+        isAutoAccept: true,
+        gateExplanation: "Progress consistent with schedule plan",
+        topCandidate: `${activeAct.id} (${activeAct.name})`,
+        secondCandidate: `${secAct.id} (${secAct.name})`,
+        hardChecks: "PASS"
+      };
+      if (onPublish) onPublish(event);
+      return;
+    }
+
     const sc = scenarioToUse || getScenarioById(activeScenarioId) || SCENARIO_DATA[gateScenario] || SCENARIO_DATA["auto-accept"];
     const evalData = evaluateFieldSignal({ scenarioKey: activeScenarioId || gateScenario });
 
@@ -1900,7 +2186,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario })
       hardChecks: evalData.hardChecks
     };
     if (onPublish) onPublish(event);
-  }, [activeScenarioId, gateScenario, executionStatus, quantityProgress, evidenceCount, onPublish]);
+  }, [isDemoProject, project, activeScenarioId, gateScenario, executionStatus, quantityProgress, evidenceCount, onPublish]);
 
   // Fast skip function for instant demo gratification
   const handleFastComplete = () => {
@@ -1935,22 +2221,22 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario })
         <div className="domain-top-status-bar">
           <div className="status-item">
             <span className="status-kicker">PROJECT</span>
-            <strong>ALPHA FACILITY PHASE 2</strong>
+            <strong>{project?.name || "ALPHA FACILITY PHASE 2"}</strong>
           </div>
           <div className="status-divider"></div>
           <div className="status-item">
             <span className="status-kicker">DOMAIN SUPERVISOR</span>
-            <strong>ARJUN SHARMA (CIVIL)</strong>
+            <strong>{project?.supervisor?.name || "ARJUN SHARMA"}</strong>
           </div>
           <div className="status-divider"></div>
           <div className="status-item">
             <span className="status-kicker">WORKFRONT</span>
-            <strong>GRID A-14 · SUBSTRUCTURE</strong>
+            <strong>{project?.supervisor?.assignedWorkfront || "GRID A-14 · SUBSTRUCTURE"}</strong>
           </div>
           <div className="status-divider"></div>
           <div className="status-item">
             <span className="status-kicker">STATUS DATE</span>
-            <strong className="active-green">DAY 14 · SHIFT A</strong>
+            <strong className="active-green">{project?.statusDate || "DAY 14 · SHIFT A"}</strong>
           </div>
         </div>
 
@@ -2005,7 +2291,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario })
                   <div className="item-icon-box">📍</div>
                   <div>
                     <span className="item-sub">LOCATION / WORKFRONT</span>
-                    <strong>Grid A-14: Foundation Pit Substructure</strong>
+                    <strong>{project?.supervisor?.assignedWorkfront || "Grid A-14: Foundation Pit Substructure"}</strong>
                   </div>
                 </div>
 
@@ -2013,7 +2299,11 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario })
                   <div className="item-icon-box">📅</div>
                   <div>
                     <span className="item-sub">SCHEDULED ACTIVITY</span>
-                    <strong>CF-104: Foundation Excavation (60-70% window)</strong>
+                    <strong>
+                      {isDemoProject
+                        ? "CF-104: Foundation Excavation (60-70% window)"
+                        : `${project?.activities?.[2]?.id || "SP-204"}: ${project?.activities?.[2]?.name || "PV Module Stringing"} (Active)`}
+                    </strong>
                   </div>
                   <span className="task-status-pill in-progress">ACTIVE TODAY</span>
                 </div>
@@ -2022,40 +2312,48 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario })
                   <div className="item-icon-box">🔗</div>
                   <div>
                     <span className="item-sub">SUCCESSOR DEPENDENCY</span>
-                    <strong>CF-108: Foundation Pour & Curing (Starts upon CF-104 completion)</strong>
+                    <strong>
+                      {isDemoProject
+                        ? "CF-108: Foundation Pour & Curing (Starts upon CF-104 completion)"
+                        : `${project?.activities?.[3]?.id || "SP-208"}: ${project?.activities?.[3]?.name || "Inverter Station Hookup"}`}
+                    </strong>
                   </div>
-                  <span className="task-status-pill pending">PENDING CLEARANCE</span>
+                  <span className="task-status-pill pending">
+                    {isDemoProject ? "PENDING CLEARANCE" : "SCHEDULED"}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* QUICK PRESET SCENARIO SELECTOR */}
-            <div className="quick-presets-section">
-              <span className="presets-title">PHASE 2 INTERACTIVE DEMO SCENARIOS:</span>
-              <div className="preset-buttons-grid">
-                {DEMO_SCENARIOS.map((sc) => (
-                  <button
-                    key={sc.id}
-                    type="button"
-                    className={`preset-btn ${activeScenarioId === sc.id ? "active" : ""}`}
-                    onClick={() => {
-                      if (onSelectScenario) onSelectScenario(sc.id);
-                      setReportNote(sc.reportText);
-                      setExecutionStatus(sc.newStatus);
-                      setQuantityProgress(sc.quantityProgress);
-                      setEvidenceCount(sc.evidenceCount);
-                      setGateScenario(sc.id === "ambiguous-civil" ? "ambiguity" : "auto-accept");
-                    }}
-                  >
-                    <span className="preset-icon">{sc.badgeType === "danger" ? "⚡" : sc.badgeType === "warning" ? "⏳" : "⚠️"}</span>
-                    <div>
-                      <strong>{sc.name}</strong>
-                      <small>{sc.workfront} · {sc.badge}</small>
-                    </div>
-                  </button>
-                ))}
+            {/* QUICK PRESET SCENARIO SELECTOR - SCOPED EXCLUSIVELY TO DEMO PROJECTS */}
+            {isDemoProject && (
+              <div className="quick-presets-section">
+                <span className="presets-title">PHASE 2 INTERACTIVE DEMO SCENARIOS:</span>
+                <div className="preset-buttons-grid">
+                  {DEMO_SCENARIOS.map((sc) => (
+                    <button
+                      key={sc.id}
+                      type="button"
+                      className={`preset-btn ${activeScenarioId === sc.id ? "active" : ""}`}
+                      onClick={() => {
+                        if (onSelectScenario) onSelectScenario(sc.id);
+                        setReportNote(sc.reportText);
+                        setExecutionStatus(sc.newStatus);
+                        setQuantityProgress(sc.quantityProgress);
+                        setEvidenceCount(sc.evidenceCount);
+                        setGateScenario(sc.id === "ambiguous-civil" ? "ambiguity" : "auto-accept");
+                      }}
+                    >
+                      <span className="preset-icon">{sc.badgeType === "danger" ? "⚡" : sc.badgeType === "warning" ? "⏳" : "⚠️"}</span>
+                      <div>
+                        <strong>{sc.name}</strong>
+                        <small>{sc.workfront} · {sc.badge}</small>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* NATURAL LANGUAGE OBSERVATION INPUT */}
             <div className="natural-input-section">
@@ -2129,7 +2427,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario })
                   <strong>Workfront Photographic Evidence</strong>
                   <p>
                     {evidenceAttached
-                      ? `${evidenceCount} geo-tagged photos attached · Grid A-14 (26.68°N, 93.91°E) · 16:42 IST`
+                      ? `${evidenceCount} geo-tagged photos attached · ${project?.supervisor?.assignedWorkfront || "Grid A-14"} · ${project?.statusDate || "16:42 IST"}`
                       : "No evidence currently attached (reduces Evidence Cross-Check score)"}
                   </p>
                 </div>
@@ -2914,11 +3212,13 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario })
   );
 }
 
-function UpdatedStateView({ perturbationResult }) {
+function UpdatedStateView({ perturbationResult, project }) {
   const result = perturbationResult || simulateSchedulePerturbation();
-  const baselineFinish = 30;
-  const forecastFinish = result ? result.milestoneExposure["M-03"].perturbedEF : 30;
+  const baselineFinish = project ? project.baselineFinishDay : 30;
+  const finishExposure = result?.milestoneExposure ? Object.values(result.milestoneExposure)[0] : null;
+  const forecastFinish = finishExposure ? finishExposure.perturbedEF : baselineFinish + (result?.projectDelayDays || 0);
   const isDelayed = result ? result.isProjectFinishDelayed : false;
+  const nodeCount = result?.perturbedActivities?.length || 0;
 
   return (
     <section className="content">
@@ -3007,7 +3307,7 @@ function UpdatedStateView({ perturbationResult }) {
         <div className="panel-header">
           <div>
             <p className="section-kicker">LIVING EPC SCHEDULE STATUS</p>
-            <h3>14-Node Schedule Variance Table</h3>
+            <h3>{nodeCount}-Node Schedule Variance Table</h3>
           </div>
           <span className="state-change-tag">TOPOLOGICAL CPM</span>
         </div>
@@ -3080,13 +3380,13 @@ function UpdatedStateView({ perturbationResult }) {
         <div className="audit-events">
 
           <div>
-            <span>DAY 14 · 16:42</span>
-            <strong>Field condition captured</strong>
-            <small>Site Supervisor</small>
+            <span>{project?.statusDate ? project.statusDate.toUpperCase() : "DAY 14 · 16:42"}</span>
+            <strong>{result?.disturbance?.reason || "Field condition captured"}</strong>
+            <small>{project?.supervisor?.name ? `${project.supervisor.name} (${project.supervisor.role})` : "Site Supervisor"}</small>
           </div>
 
           <div>
-            <span>DAY 14 · 18:10</span>
+            <span>{project?.statusDate ? `${project.statusDate.toUpperCase()} · VERIFIED` : "DAY 14 · 18:10"}</span>
             <strong>Execution state verified</strong>
             <small>Domain Supervisor</small>
           </div>
