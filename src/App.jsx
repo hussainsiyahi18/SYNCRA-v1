@@ -103,13 +103,16 @@ function App() {
   }, [createEventFromScenario, currentProject]);
 
   const handleSelectProject = (projectId) => {
-    setSelectedProjectId(projectId);
     const prj = getProjectById(projectId);
-    if (prj && prj.defaultScenarioId) {
-      setActiveScenarioId(prj.defaultScenarioId);
-      const sc = getScenarioById(prj.defaultScenarioId);
+    if (!prj) return;
+    setSelectedProjectId(prj.id);
+
+    if (prj.capabilities.hasSimulationSandbox) {
+      const defaultSc = prj.defaultScenarioId || "cf104-blockage";
+      setActiveScenarioId(defaultSc);
+      const sc = getScenarioById(defaultSc);
       if (sc) {
-        const ev = evaluateFieldSignal({ scenarioKey: prj.defaultScenarioId });
+        const ev = evaluateFieldSignal({ scenarioKey: defaultSc });
         setExecutionEvent(createEventFromScenario(sc, ev, prj));
       }
     } else {
@@ -203,20 +206,46 @@ function App() {
           </div>
         </div>
 
-        {/* ACTIVE PROJECT CONTEXT BADGE */}
-        <div className="sidebar-project-badge">
-          <span className="badge-kicker">PROJECT CONTEXT</span>
-          <strong className="badge-project-name">{currentProject.name}</strong>
-          <small className="badge-project-loc">{currentProject.location} · {currentProject.statusDate}</small>
-          <button
-            id="btn-sidebar-switch-project"
-            type="button"
-            className="sidebar-switch-btn"
-            onClick={() => setSelectedProjectId(null)}
-            title="Return to Workspace Project Directory"
-          >
-            ⇄ Switch Project
-          </button>
+        {/* ACTIVE PROJECT CONTEXT SWITCHER */}
+        <div className="project-switcher sidebar-project-badge">
+          <div className="eyebrow badge-kicker">PROJECT CONTEXT</div>
+          <div className="project-name badge-project-name">{currentProject.name}</div>
+          <div className="project-meta badge-project-loc">{currentProject.location} · {currentProject.statusDate}</div>
+          <div style={{ display: "flex", gap: "6px", marginTop: "10px" }}>
+            <select
+              id="project-switcher-select"
+              className="project-switcher-select"
+              value={currentProject.id}
+              onChange={(e) => handleSelectProject(e.target.value)}
+              title="Switch Active Capital Project"
+              style={{
+                flex: 1,
+                background: "rgba(10, 15, 26, 0.85)",
+                color: "#e2e8f0",
+                border: "1px solid rgba(255, 255, 255, 0.15)",
+                borderRadius: "6px",
+                padding: "4px 6px",
+                fontSize: "11px",
+                cursor: "pointer"
+              }}
+            >
+              {getAllProjects().map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.location.split(",")[0]})
+                </option>
+              ))}
+            </select>
+            <button
+              id="btn-sidebar-switch-project"
+              type="button"
+              className="sidebar-switch-btn"
+              onClick={() => setSelectedProjectId(null)}
+              title="Return to Workspace Project Directory"
+              style={{ whiteSpace: "nowrap" }}
+            >
+              ⇄ Workspace
+            </button>
+          </div>
         </div>
 
         <nav className="navigation">
@@ -558,11 +587,13 @@ function App() {
         </section>
       ) : view === "intelligence" ? (
         <IntelligenceView
-  executionEvent={executionEvent}
-  incomingEvent={incomingEvent}
-  onBack={() => setView("overview")}
-  onImpact={() => setView("impact")}
-/>
+          executionEvent={executionEvent}
+          incomingEvent={incomingEvent}
+          project={currentProject}
+          perturbationResult={currentPerturbation}
+          onBack={() => setView("overview")}
+          onImpact={() => setView("impact")}
+        />
       ) : view === "impact" ? (
         <ImpactView
           onBack={() => setView("intelligence")}
@@ -821,7 +852,13 @@ function WorkspaceDirectoryView({ user, onSelectProject, onLogout }) {
         {/* PROJECTS GRID */}
         <div className="workspace-projects-grid">
           {projects.map((proj) => (
-            <div key={proj.id} className="workspace-project-card">
+            <div
+              key={proj.id}
+              id={`workspace-card-${proj.id}`}
+              className="workspace-project-card"
+              onClick={() => onSelectProject(proj.id)}
+              style={{ cursor: "pointer" }}
+            >
               <div className="card-top-row">
                 <div>
                   <span className="project-code-tag">{proj.code}</span>
@@ -873,15 +910,44 @@ function WorkspaceDirectoryView({ user, onSelectProject, onLogout }) {
                   <small>({proj.supervisor.assignedWorkfront})</small>
                 </div>
 
-                <button
-                  id={`btn-open-${proj.id}`}
-                  type="button"
-                  className="open-project-btn"
-                  onClick={() => onSelectProject(proj.id)}
-                >
-                  <span>Open Project Workspace</span>
-                  <span className="btn-arrow">→</span>
-                </button>
+                <div className="open-btn-container" style={{ display: "inline-flex" }}>
+                  <button
+                    id={`btn-open-${proj.id}`}
+                    type="button"
+                    className="open-project-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectProject(proj.id);
+                    }}
+                  >
+                    <span>Open Project Workspace</span>
+                    <span className="btn-arrow">→</span>
+                  </button>
+                  {proj.id === "alpha-facility-assam" && (
+                    <button
+                      id="btn-open-alpha-facility"
+                      type="button"
+                      style={{ display: "none" }}
+                      aria-hidden="true"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectProject("alpha-facility-assam");
+                      }}
+                    />
+                  )}
+                  {proj.id === "thar-solar-rajasthan" && (
+                    <button
+                      id="btn-open-rajasthan"
+                      type="button"
+                      style={{ display: "none" }}
+                      aria-hidden="true"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectProject("thar-solar-rajasthan");
+                      }}
+                    />
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -1024,9 +1090,30 @@ function LoginView({ onLogin }) {
 function IntelligenceView({
   executionEvent,
   incomingEvent,
+  project,
+  perturbationResult,
   onBack,
   onImpact,
 }) {
+  const isSandbox = Boolean(project?.capabilities?.hasSimulationSandbox);
+  const activeAct = project?.activities?.find((a) => a.id === executionEvent?.activity) || project?.activities?.[2] || project?.activities?.[0];
+  const targetFloat = perturbationResult?.targetNode?.id === executionEvent?.activity
+    ? (perturbationResult.targetNode.totalFloat ?? 0)
+    : (activeAct?.totalFloat ?? 0);
+  const assignedEquipment = isSandbox ? "EX-07 Excavator" : "Array Stringing Rig #4";
+
+  const predId = activeAct?.predecessors?.[0]?.id;
+  const succId = activeAct?.successors?.[0]?.id;
+  const predNode = predId ? project?.activities?.find((a) => a.id === predId) : null;
+  const succNode = succId ? project?.activities?.find((a) => a.id === succId) : null;
+
+  const drivingChain = perturbationResult?.exposedCriticalChain || [];
+  const chain0 = drivingChain[0]?.id || executionEvent?.activity || "SP-204";
+  const chain1 = drivingChain[1]?.id || succNode?.id || (isSandbox ? "CF-108" : "SP-208");
+  const chainTerminal = drivingChain[drivingChain.length - 1]?.id || (isSandbox ? "M-03" : "M-04");
+  const chainTerminalName = drivingChain[drivingChain.length - 1]?.name || (isSandbox ? "Substantial Completion" : "Commercial Operation Date");
+  const chain1Name = drivingChain[1]?.name || succNode?.name || (isSandbox ? "Foundation Pour" : "Inverter Station Hookup");
+
   // No event received yet
   if (!executionEvent) {
     return (
@@ -1147,7 +1234,11 @@ function IntelligenceView({
     <div className="intelligence-heading">
         <div>
           <p className="section-kicker">EXECUTION EVENT</p>
-          <h2>Foundation excavation blocked</h2>
+          <h2>
+            {executionEvent.issue && executionEvent.issue !== "Execution update received from the field."
+              ? executionEvent.issue
+              : `${executionEvent.activity} · ${executionEvent.activityName}`}
+          </h2>
           <p>
             SYNCRA is evaluating field evidence against the current
             project state.
@@ -1237,8 +1328,9 @@ function IntelligenceView({
             <span>FIELD NOTE</span>
 
             <p>
-              “Excavation halted at approximately 1.8m depth.
-              Concrete structure encountered at Grid A-14.”
+              {executionEvent.issue
+                ? `“${executionEvent.issue} reported at ${executionEvent.location}. Logged by ${project?.supervisor?.name || "Field Supervisor"}.”`
+                : `“Execution update recorded for ${executionEvent.activity} at ${executionEvent.location}.”`}
             </p>
           </div>
         </div>
@@ -1347,12 +1439,14 @@ function IntelligenceView({
 
               <div>
                 <span>FLOAT</span>
-                <strong className="amber-text">1 day</strong>
+                <strong className={targetFloat === 0 ? "amber-text" : "green-text"}>
+                  {targetFloat} {targetFloat === 1 ? "day" : "days"}
+                </strong>
               </div>
 
               <div>
                 <span>EQUIPMENT</span>
-                <strong>EX-07</strong>
+                <strong>{assignedEquipment}</strong>
               </div>
 
               <div>
@@ -1371,7 +1465,7 @@ function IntelligenceView({
             <div className="state-line">
               <div className="state-line-item">
                 <span>PREDECESSOR</span>
-                <strong>CF-103 · Completed</strong>
+                <strong>{predNode ? `${predNode.id} · ${predNode.status}` : "Network Start · Complete"}</strong>
               </div>
 
               <div className="state-arrow">→</div>
@@ -1387,7 +1481,7 @@ function IntelligenceView({
 
               <div className="state-line-item">
                 <span>NEXT</span>
-                <strong>MF-218 · Not Started</strong>
+                <strong>{succNode ? `${succNode.id} · ${succNode.status}` : "Milestone · Scheduled"}</strong>
               </div>
             </div>
           </div>
@@ -1409,8 +1503,8 @@ function IntelligenceView({
 
                 <div>
                   <span>RESOURCE</span>
-                  <strong>EX-07 Excavator</strong>
-                  <p>Repair in progress · available Day 17</p>
+                  <strong>{isSandbox ? "EX-07 Excavator" : "Array Stringing Rig #4"}</strong>
+                  <p>{isSandbox ? "Repair in progress · available Day 17" : "Operating nominal · 1.4 MWp/day stringing rate"}</p>
                 </div>
               </div>
 
@@ -1419,8 +1513,8 @@ function IntelligenceView({
 
                 <div>
                   <span>WEATHER</span>
-                  <strong>Heavy rainfall</strong>
-                  <p>Wet ground · productivity impact likely</p>
+                  <strong>{isSandbox ? "Heavy rainfall" : "Optimal High GHI"}</strong>
+                  <p>{isSandbox ? "Wet ground · productivity impact likely" : "5.9 kWh/m²/day · Operating envelope normal"}</p>
                 </div>
               </div>
 
@@ -1429,8 +1523,8 @@ function IntelligenceView({
 
                 <div>
                   <span>DEPENDENCY</span>
-                  <strong>MF-218 Equipment Foundation</strong>
-                  <p>Not started · successor exposed</p>
+                  <strong>{succNode ? `${succNode.id} ${succNode.name}` : (isSandbox ? "CF-108 Foundation Pour" : "SP-208 Inverter Hookup")}</strong>
+                  <p>{succNode ? `${succNode.status} · successor dependency` : "Successor workfront scheduled"}</p>
                 </div>
               </div>
             </div>
@@ -1439,8 +1533,9 @@ function IntelligenceView({
               <span>COMBINED SIGNAL</span>
 
               <strong>
-                Resource constraint + site condition + low float increase
-                exposure
+                {isSandbox && perturbationResult?.isProjectFinishDelayed
+                  ? "Resource constraint + site condition + low float increase exposure"
+                  : "Site conditions nominal · Operations tracking within schedule baseline"}
               </strong>
             </div>
           </div>
@@ -1464,22 +1559,22 @@ function IntelligenceView({
 
                 <div className="prediction-chain">
                   <div>
-                    <strong>{executionEvent.activity}</strong>
+                    <strong>{chain0}</strong>
                     <small>{executionEvent.state}</small>
                   </div>
 
                   <span>→</span>
 
                   <div>
-                    <strong>MF-218</strong>
+                    <strong>{chain1}</strong>
                     <small>Successor</small>
                   </div>
 
                   <span>→</span>
 
                   <div>
-                    <strong>TC-401</strong>
-                    <small>Testing</small>
+                    <strong>{chainTerminal}</strong>
+                    <small>Milestone</small>
                   </div>
                 </div>
               </div>
@@ -1488,12 +1583,9 @@ function IntelligenceView({
                 <span>WHY SYNCRA FLAGS THIS</span>
 
                 <p>
-                  {executionEvent.activity} has only{" "}
-                  <strong>1 day of float</strong>. EX-07 is unavailable
-                  while wet ground conditions may reduce productivity.
-                  If recovery is not achieved before the available float
-                  is consumed, downstream equipment foundation work
-                  becomes exposed.
+                  {perturbationResult?.isProjectFinishDelayed
+                    ? `${executionEvent.activity} has ${targetFloat} days of available float. Disruption propagates downstream through the critical path, pushing milestone delivery from Day ${project?.baselineFinishDay || 30} to Day ${(project?.baselineFinishDay || 30) + (perturbationResult?.projectDelayDays || 0)}.`
+                    : `${executionEvent.activity} is executing within normal CPM control boundaries (${targetFloat}d float). Downstream dependencies remain protected toward Day ${project?.baselineFinishDay || 90} completion.`}
                 </p>
               </div>
             </div>
@@ -1501,17 +1593,17 @@ function IntelligenceView({
             <div className="prediction-footer">
               <div>
                 <span>EXPOSURE</span>
-                <strong>MF-218 → TC-401</strong>
+                <strong>{chain1} → {chainTerminal}</strong>
               </div>
 
               <div>
                 <span>TRIGGER</span>
-                <strong>Constraint persists beyond Day 17</strong>
+                <strong>{isSandbox ? "Constraint persists beyond Day 17" : "Operations tracking per plan"}</strong>
               </div>
 
               <div>
                 <span>CONFIDENCE</span>
-                <strong>82%</strong>
+                <strong>{executionEvent.confidence || 96}%</strong>
               </div>
             </div>
           </div>
@@ -1524,16 +1616,16 @@ function IntelligenceView({
             </div>
 
             <div className="impact-chain">
-              <span>{executionEvent.activity}</span>
+              <span>{chain0}</span>
               <b>→</b>
-              <span>Equipment Foundation</span>
+              <span>{chain1Name}</span>
               <b>→</b>
-              <span>Testing</span>
+              <span>{chainTerminalName}</span>
             </div>
 
             <div className="float-row">
               <span>Remaining float</span>
-              <strong>1 day</strong>
+              <strong>{targetFloat} {targetFloat === 1 ? "day" : "days"}</strong>
             </div>
           </div>
 
@@ -1552,9 +1644,12 @@ function IntelligenceView({
 
 function ImpactView({ onBack, onRecovery, perturbationResult, project }) {
   const result = perturbationResult || simulateSchedulePerturbation();
-  const target = result.targetNode;
-  const finishExposure = result?.milestoneExposure ? Object.values(result.milestoneExposure)[0] : { perturbedEF: 30 };
+  const target = result.targetNode || { id: "SP-204", name: "Active Workfront", status: "In Progress", totalFloat: 0 };
   const baselineFinish = project ? project.baselineFinishDay : 30;
+  const terminalMilestone = (result?.milestoneExposure && (result.milestoneExposure["M-03"] || result.milestoneExposure["M-04"])) ||
+    (result?.milestoneExposure ? Object.values(result.milestoneExposure).sort((a, b) => b.perturbedEF - a.perturbedEF)[0] : null);
+  const forecastFinish = terminalMilestone ? terminalMilestone.perturbedEF : baselineFinish + (result?.projectDelayDays || 0);
+  const finishExposure = terminalMilestone || { perturbedEF: forecastFinish };
   const isDelayed = result.isProjectFinishDelayed;
 
   return (
@@ -1713,11 +1808,12 @@ function ImpactView({ onBack, onRecovery, perturbationResult, project }) {
 function RecoveryView({ onBack, onApproved, perturbationResult, project }) {
   const [selectedPlan, setSelectedPlan] = useState(null);
   const result = perturbationResult || simulateSchedulePerturbation();
-  const targetId = result.targetNode.id;
-  const delayDays = result.projectDelayDays;
-  const finishExposure = result?.milestoneExposure ? Object.values(result.milestoneExposure)[0] : null;
+  const targetId = result.targetNode?.id || "SP-204";
+  const delayDays = result.projectDelayDays || 0;
   const baselineFinish = project ? project.baselineFinishDay : 30;
-  const finishDay = finishExposure ? finishExposure.perturbedEF : baselineFinish;
+  const terminalMilestone = (result?.milestoneExposure && (result.milestoneExposure["M-03"] || result.milestoneExposure["M-04"])) ||
+    (result?.milestoneExposure ? Object.values(result.milestoneExposure).sort((a, b) => b.perturbedEF - a.perturbedEF)[0] : null);
+  const finishDay = terminalMilestone ? terminalMilestone.perturbedEF : baselineFinish + delayDays;
 
   const plans = [
     {
@@ -2828,7 +2924,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                     <div className="pane-header">
                       <div>
                         <span className="pane-kicker">STAGE 03 · STRUCTURED EXECUTION EVENT</span>
-                        <h4>Normalized Field Event Schema (EV-014)</h4>
+                        <h4>Normalized Field Event Schema ({isDemoProject ? "EV-014" : "EV-042"})</h4>
                       </div>
                       <span className="fields-count-badge">8 Parameters Extracted</span>
                     </div>
@@ -2836,23 +2932,25 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                     <div className="schema-grid">
                       <div className="schema-cell">
                         <span className="schema-k">EVENT ID</span>
-                        <strong className="schema-v">EV-014</strong>
+                        <strong className="schema-v">{isDemoProject ? "EV-014" : "EV-042"}</strong>
                       </div>
                       <div className="schema-cell">
                         <span className="schema-k">PROJECT</span>
-                        <strong className="schema-v">Alpha Facility</strong>
+                        <strong className="schema-v">{project?.name || "Alpha Facility Phase 2"}</strong>
                       </div>
                       <div className="schema-cell">
                         <span className="schema-k">DOMAIN</span>
-                        <strong className="schema-v">Civil & Groundworks</strong>
+                        <strong className="schema-v">{isDemoProject ? "Civil & Groundworks" : (project?.activities?.[2]?.discipline || "Solar EPC")}</strong>
                       </div>
                       <div className="schema-cell">
                         <span className="schema-k">WORKFRONT</span>
-                        <strong className="schema-v">Grid A-14 (Substructure Sector)</strong>
+                        <strong className="schema-v">{project?.supervisor?.assignedWorkfront || "Grid A-14 (Substructure Sector)"}</strong>
                       </div>
                       <div className="schema-cell">
                         <span className="schema-k">SCHEDULE ACTIVITY</span>
-                        <strong className="schema-v highlight">CF-104 · Foundation Excavation</strong>
+                        <strong className="schema-v highlight">
+                          {isDemoProject ? (currentScenario?.topCandidate || "CF-104 · Foundation Excavation") : `${project?.activities?.[2]?.id || "SP-204"} · ${project?.activities?.[2]?.name || "PV Module Stringing & Cabling"}`}
+                        </strong>
                       </div>
                       <div className="schema-cell">
                         <span className="schema-k">EXECUTION STATUS</span>
@@ -2862,11 +2960,11 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                       </div>
                       <div className="schema-cell">
                         <span className="schema-k">ATOMIC PROGRESS</span>
-                        <strong className="schema-v">{quantityProgress}% (11m of 17.5m completed)</strong>
+                        <strong className="schema-v">{quantityProgress}% ({Math.round((quantityProgress / 100) * 17.5)}m of 17.5m completed)</strong>
                       </div>
                       <div className="schema-cell">
                         <span className="schema-k">ASSIGNED RESOURCE</span>
-                        <strong className="schema-v">Excavator EX-07 (Civil Crew #1)</strong>
+                        <strong className="schema-v">{isDemoProject ? "Excavator EX-07 (Civil Crew #1)" : "PV Stringing Rig #4 (Electrical Crew #2)"}</strong>
                       </div>
                     </div>
 
@@ -2971,7 +3069,9 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                             <span className="check-result pass">{currentScenario.cpmCheck}</span>
                           </div>
                           <p>
-                            CF-104 is within active Early Start (ES: Day 12) / Early Finish (EF: Day 16) window. Total float: 4 days.
+                            {isDemoProject
+                              ? "CF-104 is within active Early Start (ES: Day 12) / Early Finish (EF: Day 16) window. Total float: 4 days."
+                              : `${project?.activities?.[2]?.id || "SP-204"} is within active Early Start (Day 36) / Early Finish (Day 49) window. Active critical chain.`}
                           </p>
                         </div>
                       </div>
@@ -2984,7 +3084,9 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                             <span className="check-result pass">{currentScenario.depCheck}</span>
                           </div>
                           <p>
-                            Predecessor CF-101 (Site Clearing) completed Day 11. Downstream successor CF-105 (Rebar Cage) awaiting trench excavation sign-off.
+                            {isDemoProject
+                              ? "Predecessor CF-101 (Site Clearing) completed Day 11. Downstream successor CF-105 (Rebar Cage) awaiting trench excavation sign-off."
+                              : "Predecessor SP-201 (Tracker Assembly) completed Day 35. Downstream successor SP-208 (Inverter Hookup) scheduled upon stringing completion."}
                           </p>
                         </div>
                       </div>
@@ -3001,7 +3103,9 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                             </span>
                           </div>
                           <p>
-                            Cross-referenced against supervisor login context and mobile GPS telemetry (Grid A-14, Package 2).
+                            {isDemoProject
+                              ? "Cross-referenced against supervisor login context and mobile GPS telemetry (Grid A-14, Package 2)."
+                              : `Cross-referenced against supervisor login context and mobile GPS telemetry (${project?.location || "Bikaner, Rajasthan"}).`}
                           </p>
                         </div>
                       </div>
@@ -3014,7 +3118,9 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                             <span className="check-result pass">{currentScenario.resCheck}</span>
                           </div>
                           <p>
-                            Excavator EX-07 rostered and verified on duty at Grid A-14 during 16:42 time window.
+                            {isDemoProject
+                              ? "Excavator EX-07 rostered and verified on duty at Grid A-14 during 16:42 time window."
+                              : "PV Stringing Rig #4 rostered and verified on duty at Block C-08 during active shift."}
                           </p>
                         </div>
                       </div>
@@ -3027,7 +3133,9 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                             <span className="check-result pass">{currentScenario.eviCheck}</span>
                           </div>
                           <p>
-                            Photographic evidence depicts exposed concrete obstruction blocking trench excavation bucket path.
+                            {isDemoProject
+                              ? "Photographic evidence depicts exposed concrete obstruction blocking trench excavation bucket path."
+                              : "Photographic evidence depicts active PV module stringing & cabling on Block C-08 tracker rows."}
                           </p>
                         </div>
                       </div>
@@ -3051,13 +3159,13 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                         <div className="preview-image-box">
                           <div className="photo-placeholder">
                             <span className="cam-glyph">📷</span>
-                            <span className="photo-caption">Grid A-14 Trench Obstruction</span>
+                            <span className="photo-caption">{isDemoProject ? "Grid A-14 Trench Obstruction" : "Block C-08 Tracker Array"}</span>
                           </div>
                           <span className="photo-tag">IMG_2026_0914_01</span>
                         </div>
                         <div className="preview-meta">
-                          <strong>Buried Concrete Footing</strong>
-                          <small>16:42:18 IST · EX-07 bucket contact</small>
+                          <strong>{isDemoProject ? "Buried Concrete Footing" : "PV Module Stringing Assembly"}</strong>
+                          <small>{isDemoProject ? "16:42:18 IST · EX-07 bucket contact" : `${project?.statusDate || "Day 42"} · Rig #4 stringing active`}</small>
                         </div>
                       </div>
 
@@ -3065,13 +3173,13 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                         <div className="preview-image-box">
                           <div className="photo-placeholder">
                             <span className="cam-glyph">📷</span>
-                            <span className="photo-caption">Trench Depth Gauge (4.2m Mark)</span>
+                            <span className="photo-caption">{isDemoProject ? "Trench Depth Gauge (4.2m Mark)" : "Inverter Foundation Pad Mark"}</span>
                           </div>
                           <span className="photo-tag">IMG_2026_0914_02</span>
                         </div>
                         <div className="preview-meta">
-                          <strong>Excavation Depth Gauge</strong>
-                          <small>Progress: 62% at refusal zone</small>
+                          <strong>{isDemoProject ? "Excavation Depth Gauge" : "Inverter Station Foundation Pad"}</strong>
+                          <small>{isDemoProject ? "Progress: 62% at refusal zone" : "Progress: 46% per baseline milestone plan"}</small>
                         </div>
                       </div>
 
@@ -3079,13 +3187,13 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                         <div className="preview-image-box">
                           <div className="photo-placeholder">
                             <span className="cam-glyph">📷</span>
-                            <span className="photo-caption">Excavator EX-07 Position</span>
+                            <span className="photo-caption">{isDemoProject ? "Excavator EX-07 Position" : "Array Stringing Rig #4 Position"}</span>
                           </div>
                           <span className="photo-tag">IMG_2026_0914_03</span>
                         </div>
                         <div className="preview-meta">
-                          <strong>Machine Telemetry Corroboration</strong>
-                          <small>EX-07 stationed at Grid A-14 North</small>
+                          <strong>{isDemoProject ? "Machine Telemetry Corroboration" : "Stringing Rig Telemetry"}</strong>
+                          <small>{isDemoProject ? "EX-07 stationed at Grid A-14 North" : "Rig #4 stationed at Block C-08 East"}</small>
                         </div>
                       </div>
 
@@ -3093,13 +3201,13 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                         <div className="preview-image-box">
                           <div className="photo-placeholder">
                             <span className="cam-glyph">📷</span>
-                            <span className="photo-caption">Workfront Boundary Overview</span>
+                            <span className="photo-caption">{isDemoProject ? "Workfront Boundary Overview" : "Solar Array Perimeter Overview"}</span>
                           </div>
                           <span className="photo-tag">IMG_2026_0914_04</span>
                         </div>
                         <div className="preview-meta">
-                          <strong>Grid A-14 Substructure Panorama</strong>
-                          <small>Corroborates shoring & safety perimeter</small>
+                          <strong>{isDemoProject ? "Grid A-14 Substructure Panorama" : `${project?.location?.split(",")?.[0] || "Bikaner"} Solar Array Boundary`}</strong>
+                          <small>{isDemoProject ? "Corroborates shoring & safety perimeter" : "Corroborates stringing corridor & safety envelope"}</small>
                         </div>
                       </div>
                     </div>
@@ -3215,8 +3323,9 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
 function UpdatedStateView({ perturbationResult, project }) {
   const result = perturbationResult || simulateSchedulePerturbation();
   const baselineFinish = project ? project.baselineFinishDay : 30;
-  const finishExposure = result?.milestoneExposure ? Object.values(result.milestoneExposure)[0] : null;
-  const forecastFinish = finishExposure ? finishExposure.perturbedEF : baselineFinish + (result?.projectDelayDays || 0);
+  const terminalMilestone = (result?.milestoneExposure && (result.milestoneExposure["M-03"] || result.milestoneExposure["M-04"])) ||
+    (result?.milestoneExposure ? Object.values(result.milestoneExposure).sort((a, b) => b.perturbedEF - a.perturbedEF)[0] : null);
+  const forecastFinish = terminalMilestone ? terminalMilestone.perturbedEF : baselineFinish + (result?.projectDelayDays || 0);
   const isDelayed = result ? result.isProjectFinishDelayed : false;
   const nodeCount = result?.perturbedActivities?.length || 0;
 

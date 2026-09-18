@@ -139,6 +139,44 @@ assert(rajScheduleState2.milestoneExposure["M-04"] !== undefined, "Post-switch m
 assert(rajScheduleState2.erodedActivities.length === 0, "Post-switch eroded activities list is empty");
 console.log("  Step 5 Passed.\n");
 
+// ----------------------------------------------------------------------------
+// STEP 6: Switch back to Alpha (Verify Simulation Works & Zero Rajasthan Leakage)
+// ----------------------------------------------------------------------------
+console.log("STEP 6: Switch back to Alpha (Verify Alpha Simulation Still Works & Zero Rajasthan Leakage)");
+// Verify alias resolution for Alpha Facility
+const alphaByAlias1 = getProjectById("alpha-facility");
+const alphaByAlias2 = getProjectById("alpha-facility-assam");
+assert(alphaByAlias1 !== null && alphaByAlias1.id === "alpha-facility-assam", "Alpha resolves via 'alpha-facility' alias");
+assert(alphaByAlias2 !== null && alphaByAlias2.id === "alpha-facility-assam", "Alpha resolves via canonical ID");
+
+// Verify Rajasthan alias resolution
+const rajByAlias1 = getProjectById("thar-solar");
+const rajByAlias2 = getProjectById("rajasthan");
+assert(rajByAlias1 !== null && rajByAlias1.id === "thar-solar-rajasthan", "Rajasthan resolves via 'thar-solar' alias");
+assert(rajByAlias2 !== null && rajByAlias2.id === "thar-solar-rajasthan", "Rajasthan resolves via 'rajasthan' alias");
+
+// When returning to Alpha, default scenario 'cf104-blockage' is restored
+const alphaRestoredState = getProjectScheduleState(
+  alphaByAlias1,
+  alphaByAlias1.defaultScenarioId,
+  simulateSchedulePerturbation,
+  getScenarioById
+);
+assert(alphaRestoredState.targetNode.id === "CF-104", "Restored Alpha target node is CF-104");
+assert(alphaRestoredState.isProjectFinishDelayed === true, "Restored Alpha simulation is active (delayed finish)");
+assert(alphaRestoredState.projectDelayDays === 3, "Restored Alpha finish variance is +3 days");
+assert(alphaRestoredState.milestoneExposure["M-03"].perturbedEF === 33, "Restored Alpha terminal finish is Day 33");
+assert(alphaRestoredState.milestoneExposure["M-04"] === undefined, "Restored Alpha has NO Rajasthan M-04 milestone");
+assert(alphaRestoredState.perturbedActivities.length === 14, "Restored Alpha has all 14 industrial WBS nodes");
+
+// Verify no Rajasthan solar activities leaked into Alpha
+const alphaRestoredIds = alphaRestoredState.perturbedActivities.map(a => a.id);
+const rajasthanOnlyIds = ["SP-101", "SP-201", "SP-204", "SP-208", "EE-302", "M-02", "TC-501", "M-04"];
+for (const rId of rajasthanOnlyIds) {
+  assert(!alphaRestoredIds.includes(rId), `Restored Alpha must NOT contain Rajasthan activity ${rId}`);
+}
+console.log("  Step 6 Passed.\n");
+
 console.log("===============================================================================");
-console.log(` ✅ ALL 5-STEP PHASE 3 CONTEXT ISOLATION CHECKS PASSED (${passedAssertions} ASSERTIONS) `);
+console.log(` ✅ ALL 6-STEP PHASE 3 CONTEXT & TRANSITION CHECKS PASSED (${passedAssertions} ASSERTIONS) `);
 console.log("===============================================================================");
