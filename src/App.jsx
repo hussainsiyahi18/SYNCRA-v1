@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import { simulateSchedulePerturbation } from "./data/scheduleSimulation";
 import { evaluateFieldSignal } from "./data/confidenceEngine";
-import { getScenarioById } from "./data/demoScenarios";
+import { getScenarioById, DEMO_SCENARIOS } from "./data/demoScenarios";
 import {
   getAllProjects,
   getProjectById,
@@ -176,6 +176,7 @@ function App() {
             roleTitle: normalizedRole === "domain" ? "Lead Domain Supervisor" : "Project Manager"
           });
           setSelectedProjectId(null);
+          setView(normalizedRole === "domain" ? "domain" : "overview");
         }}
       />
     );
@@ -190,6 +191,7 @@ function App() {
           setUserRole(null);
           setCurrentUser(null);
           setSelectedProjectId(null);
+          setView("overview");
         }}
       />
     );
@@ -382,7 +384,8 @@ function App() {
         
       </aside>
 
-      <header className="topbar">
+      <div className="main-content">
+        <header className="topbar">
         <div>
           <div className="breadcrumb">
             <button
@@ -437,8 +440,8 @@ function App() {
         <div className="demo-simulation-drawer">
           <div className="drawer-header">
             <span className="drawer-demo-tag">SIMULATION SANDBOX</span>
-            <strong className="drawer-heading">Inject Execution Disturbance</strong>
-            <small className="drawer-sub">Phase 2 Closed-Loop Benchmarks · {currentProject.name}</small>
+            <strong className="drawer-heading">Disturbance Scenarios</strong>
+            <small className="drawer-sub">{currentProject.name}</small>
           </div>
 
           <div className="drawer-scenario-chips">
@@ -451,7 +454,7 @@ function App() {
               >
                 <span>{sc.badgeType === "danger" ? "⚡" : sc.badgeType === "warning" ? "⏳" : "⚠️"}</span>
                 <span className="chip-name">{sc.name}</span>
-                <span className="chip-badge">{sc.badge}</span>
+                <span className={`chip-badge ${sc.badgeType}`}>{sc.badge}</span>
               </button>
             ))}
           </div>
@@ -459,7 +462,7 @@ function App() {
       ) : (
         <div className="production-status-strip">
           <span className="prod-badge">PRODUCTION RUNTIME</span>
-          <span>{currentProject.name} · Operating within standard CPM control thresholds (Baseline Day {currentProject.baselineFinishDay}).</span>
+          <span>{currentProject.name} · Baseline Day {currentProject.baselineFinishDay} · Nominal</span>
         </div>
       )}
 
@@ -472,8 +475,8 @@ function App() {
               <h2>{currentProject.health}</h2>
               <p className="hero-description">
                 {currentPerturbation.projectDelayDays > 0
-                  ? `SYNCRA has identified critical-path variances affecting ${currentProject.name}. Review intelligence and recovery options.`
-                  : `${currentProject.name} is tracking to baseline milestones without critical exposure.`}
+                  ? "Critical Path Exposure"
+                  : "Nominal Tracking"}
               </p>
             </div>
 
@@ -482,7 +485,7 @@ function App() {
                 className="primary-button"
                 onClick={() => setView("intelligence")}
               >
-                Review intelligence <span>→</span>
+                Review Intelligence <span>→</span>
               </button>
             )}
           </div>
@@ -514,7 +517,7 @@ function App() {
               <div className="metric-label">OPEN DECISIONS</div>
               <div className="metric-value">{currentPerturbation.projectDelayDays > 0 ? 1 : 0}</div>
               <div className="metric-note">
-                {currentPerturbation.projectDelayDays > 0 ? "Requires manager authority" : "All paths clear"}
+                {currentPerturbation.projectDelayDays > 0 ? "PM approval required" : "All paths clear"}
               </div>
             </div>
           </div>
@@ -535,7 +538,7 @@ function App() {
                   <div className="attention-content">
                     <div className="attention-title">{item.title}</div>
                     <div className="attention-description">{item.description}</div>
-                    <div className="attention-meta">{item.meta}</div>
+                    <div className={`attention-meta ${item.severity === "high" ? "red-text" : ""}`}>{item.meta}</div>
                   </div>
                   <span className="arrow">→</span>
                 </div>
@@ -563,7 +566,7 @@ function App() {
                 <div className="timeline-row">
                   <span className="timeline-label">Forecast</span>
                   <div className="timeline-track">
-                    <div className="timeline-forecast"></div>
+                    <div className={`timeline-forecast ${currentPerturbation.projectDelayDays > 0 ? "delayed" : ""}`}></div>
                     <span className={`timeline-date ${currentPerturbation.projectDelayDays > 0 ? "red-text" : "green-text"}`}>
                       Day {currentProject.baselineFinishDay + currentPerturbation.projectDelayDays}
                     </span>
@@ -574,7 +577,7 @@ function App() {
               <div className="forecast-summary">
                 <div>
                   <span className="summary-label">Variance</span>
-                  <strong>{currentPerturbation.projectDelayDays > 0 ? `+${currentPerturbation.projectDelayDays} days` : "0 days"}</strong>
+                  <strong className={currentPerturbation.projectDelayDays > 0 ? "red-text" : "green-text"}>{currentPerturbation.projectDelayDays > 0 ? `+${currentPerturbation.projectDelayDays} days` : "0 days"}</strong>
                 </div>
 
                 <div>
@@ -622,7 +625,8 @@ function App() {
           project={currentProject}
         />
       )}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
@@ -826,9 +830,6 @@ function WorkspaceDirectoryView({ user, onSelectProject, onLogout }) {
           <div>
             <p className="section-kicker">CAPITAL PROJECTS DIRECTORY</p>
             <h2>Enterprise Projects Workspace</h2>
-            <p className="workspace-sub">
-              Select an active capital project to inspect execution truth, CPM dependency networks, and living schedules.
-            </p>
           </div>
 
           <div className="portfolio-stats-pill">
@@ -844,7 +845,7 @@ function WorkspaceDirectoryView({ user, onSelectProject, onLogout }) {
             <div className="stat-unit-divider"></div>
             <div className="stat-unit">
               <span>SYSTEM HEALTH</span>
-              <strong className="amber-text">1 Alert · 1 Nominal</strong>
+              <strong className="red-text">1 Alert · 1 Nominal</strong>
             </div>
           </div>
         </div>
@@ -900,13 +901,13 @@ function WorkspaceDirectoryView({ user, onSelectProject, onLogout }) {
               </div>
 
               <div className="card-critical-preview">
-                <span>DRIVING CRITICAL CHAIN:</span>
+                <span>CRITICAL CHAIN:</span>
                 <code>{proj.summaryStats.criticalChainPreview}</code>
               </div>
 
               <div className="card-footer-row">
                 <div className="supervisor-tag">
-                  <span>Lead Supervisor:</span> <strong>{proj.supervisor.name}</strong>
+                  <span>SUPERVISOR:</span> <strong>{proj.supervisor.name}</strong>
                   <small>({proj.supervisor.assignedWorkfront})</small>
                 </div>
 
@@ -920,7 +921,7 @@ function WorkspaceDirectoryView({ user, onSelectProject, onLogout }) {
                       onSelectProject(proj.id);
                     }}
                   >
-                    <span>Open Project Workspace</span>
+                    <span>Open Workspace</span>
                     <span className="btn-arrow">→</span>
                   </button>
                   {proj.id === "alpha-facility-assam" && (
@@ -1239,15 +1240,11 @@ function IntelligenceView({
               ? executionEvent.issue
               : `${executionEvent.activity} · ${executionEvent.activityName}`}
           </h2>
-          <p>
-            SYNCRA is evaluating field evidence against the current
-            project state.
-          </p>
         </div>
 
         <div className="processing-pill">
           <span></span>
-          Analysis complete
+          Verified
         </div>
       </div>
 
@@ -1339,8 +1336,8 @@ function IntelligenceView({
         <div className="panel analysis-panel">
           <div className="panel-header">
             <div>
-              <p className="section-kicker">SYNCRA ANALYSIS</p>
-              <h3>What does the evidence indicate?</h3>
+              <p className="section-kicker">ANALYSIS</p>
+              <h3>Evidence Evaluation</h3>
             </div>
 
             <div className="confidence">
@@ -1358,11 +1355,6 @@ function IntelligenceView({
               <strong>
                 {executionEvent.activity} · {executionEvent.activityName}
               </strong>
-
-              <p>
-                Field evidence is consistent with the current activity
-                and workfront.
-              </p>
             </div>
           </div>
 
@@ -1439,7 +1431,7 @@ function IntelligenceView({
 
               <div>
                 <span>FLOAT</span>
-                <strong className={targetFloat === 0 ? "amber-text" : "green-text"}>
+                <strong className={targetFloat === 0 ? "red-text" : "green-text"}>
                   {targetFloat} {targetFloat === 1 ? "day" : "days"}
                 </strong>
               </div>
@@ -1490,8 +1482,8 @@ function IntelligenceView({
           <div className="context-card">
             <div className="panel-header">
               <div>
-                <p className="section-kicker">CONTEXT INTELLIGENCE</p>
-                <h3>What is influencing this state?</h3>
+                <p className="section-kicker">CONTEXT</p>
+                <h3>Site Influences</h3>
               </div>
 
               <span className="context-count">3 SIGNALS</span>
@@ -1529,7 +1521,7 @@ function IntelligenceView({
               </div>
             </div>
 
-            <div className="context-summary">
+            <div className={`context-summary ${isSandbox && perturbationResult?.isProjectFinishDelayed ? "danger" : ""}`}>
               <span>COMBINED SIGNAL</span>
 
               <strong>
@@ -1544,8 +1536,8 @@ function IntelligenceView({
           <div className="prediction-card">
             <div className="panel-header">
               <div>
-                <p className="section-kicker">PREDICTIVE EXPOSURE</p>
-                <h3>What could happen next?</h3>
+                <p className="section-kicker">PREDICTION</p>
+                <h3>Downstream Impact Vector</h3>
               </div>
 
               <span className="exposure-badge">ELEVATED</span>
@@ -1580,12 +1572,12 @@ function IntelligenceView({
               </div>
 
               <div className="prediction-explanation">
-                <span>WHY SYNCRA FLAGS THIS</span>
+                <span>EXPOSURE DRIVER</span>
 
                 <p>
                   {perturbationResult?.isProjectFinishDelayed
-                    ? `${executionEvent.activity} has ${targetFloat} days of available float. Disruption propagates downstream through the critical path, pushing milestone delivery from Day ${project?.baselineFinishDay || 30} to Day ${(project?.baselineFinishDay || 30) + (perturbationResult?.projectDelayDays || 0)}.`
-                    : `${executionEvent.activity} is executing within normal CPM control boundaries (${targetFloat}d float). Downstream dependencies remain protected toward Day ${project?.baselineFinishDay || 90} completion.`}
+                    ? `${executionEvent.activity} has ${targetFloat}d float. Variance cascades downstream pushing milestone delivery to Day ${(project?.baselineFinishDay || 30) + (perturbationResult?.projectDelayDays || 0)}.`
+                    : `${executionEvent.activity} executing within float envelope (${targetFloat}d). Milestone delivery protected at Day ${project?.baselineFinishDay || 90}.`}
                 </p>
               </div>
             </div>
@@ -1612,7 +1604,7 @@ function IntelligenceView({
           <div className="impact-preview">
             <div>
               <span className="section-kicker">NETWORK SIGNAL</span>
-              <h4>Potential downstream exposure</h4>
+              <h4>Downstream Exposure Chain</h4>
             </div>
 
             <div className="impact-chain">
@@ -1625,7 +1617,7 @@ function IntelligenceView({
 
             <div className="float-row">
               <span>Remaining float</span>
-              <strong>{targetFloat} {targetFloat === 1 ? "day" : "days"}</strong>
+              <strong className={targetFloat === 0 ? "red-text" : targetFloat <= 2 ? "amber-text" : "green-text"}>{targetFloat} {targetFloat === 1 ? "day" : "days"}</strong>
             </div>
           </div>
 
@@ -1634,7 +1626,7 @@ function IntelligenceView({
             onClick={onImpact}
             type="button"
           >
-            Review project impact <span>→</span>
+            Impact Analysis <span>→</span>
           </button>
         </div>
       </div>
@@ -1660,11 +1652,8 @@ function ImpactView({ onBack, onRecovery, perturbationResult, project }) {
           ← Back to intelligence
         </button>
 
-        <p className="section-kicker">IMPACT ANALYSIS · DYNAMIC CPM ENGINE</p>
-        <h2>What does this state affect?</h2>
-        <p>
-          SYNCRA recalculates the living schedule network ({project?.name || "Project"}) to trace exact float erosion and downstream milestone variance.
-        </p>
+        <p className="section-kicker">IMPACT ANALYSIS</p>
+        <h2>Critical Path & Float Impact</h2>
       </div>
 
       <div className="impact-summary">
@@ -1689,7 +1678,7 @@ function ImpactView({ onBack, onRecovery, perturbationResult, project }) {
 
         <div>
           <span>FLOAT</span>
-          <strong className={target.totalFloat === 0 ? "amber-text" : "green-text"}>
+          <strong className={target.totalFloat === 0 ? "red-text" : "green-text"}>
             {target.totalFloat} {target.totalFloat === 1 ? "day" : "days"} remaining
           </strong>
         </div>
@@ -1698,8 +1687,8 @@ function ImpactView({ onBack, onRecovery, perturbationResult, project }) {
       <div className="impact-card">
         <div className="panel-header">
           <div>
-            <p className="section-kicker">DEPENDENCY IMPACT</p>
-            <h3>Dynamically calculated driving chain to completion</h3>
+            <p className="section-kicker">DEPENDENCY CHAIN</p>
+            <h3>Driving Critical Chain</h3>
           </div>
 
           <span className={`impact-level ${isDelayed ? "danger" : "warning"}`}>
@@ -1729,8 +1718,8 @@ function ImpactView({ onBack, onRecovery, perturbationResult, project }) {
       <div className="impact-analysis-grid">
 
         <div className="impact-detail-card">
-          <p className="section-kicker">SCHEDULE EFFECT</p>
-          <h3>Dynamic CPM Network Recalculation</h3>
+          <p className="section-kicker">SCHEDULE VARIANCE</p>
+          <h3>Network Metrics</h3>
 
           <div className="effect-row">
             <span>Activity delay</span>
@@ -1760,17 +1749,17 @@ function ImpactView({ onBack, onRecovery, perturbationResult, project }) {
         </div>
 
         <div className="impact-detail-card">
-          <p className="section-kicker">WHY IT MATTERS</p>
-          <h3>Float protection & downstream propagation</h3>
+          <p className="section-kicker">PROPAGATION ANALYSIS</p>
+          <h3>Float & Milestone Impact</h3>
 
           <p className="impact-copy">
             {isDelayed
-              ? `${target.id} has 0 days of available float on the active critical chain. The +${result.disturbance.delayDays}-day delay directly propagates downstream through ${result.exposedCriticalChain.slice(1, -1).map(n => n.id).join(" → ")} to completion milestone, pushing project delivery from Day ${baselineFinish} to Day ${finishExposure.perturbedEF}.`
-              : `${target.id} consumed available total float buffer without downstream critical slippage. Milestone delivery remains protected at Day ${baselineFinish}.`}
+              ? `Zero float remaining on ${target.id}. Delay propagates directly downstream to completion (+${result.projectDelayDays}d).`
+              : `Delay absorbed within available float buffer. Milestone completion preserved at Day ${baselineFinish}.`}
           </p>
 
           <div className="impact-rule">
-            <span>PROJECT IMPACT RULE</span>
+            <span>IMPACT RULE</span>
             <strong>
               {isDelayed ? "Critical delay = Project delay" : "Float absorbed = Project protected"}
             </strong>
@@ -1779,17 +1768,14 @@ function ImpactView({ onBack, onRecovery, perturbationResult, project }) {
 
       </div>
 
-      <div className="impact-decision">
+      <div className={`impact-decision ${isDelayed ? "danger" : ""}`}>
         <div>
-          <p className="section-kicker">NEXT DECISION</p>
+          <p className="section-kicker">DECISION REQUIRED</p>
           <h3>
             {isDelayed
-              ? "Critical milestone exposed. Manager intervention required."
-              : "Variance absorbed into float buffer. Review optional recovery actions."}
+              ? "Critical milestone exposed. PM intervention required."
+              : "Variance absorbed into float buffer."}
           </h3>
-          <p>
-            SYNCRA dynamically calculated this network exposure from ground reality. Review recovery scenarios below.
-          </p>
         </div>
 
         <button
@@ -1797,7 +1783,7 @@ function ImpactView({ onBack, onRecovery, perturbationResult, project }) {
           onClick={onRecovery}
           type="button"
         >
-          View recovery options <span>→</span>
+          Recovery Options <span>→</span>
         </button>
       </div>
 
@@ -1861,12 +1847,7 @@ function RecoveryView({ onBack, onApproved, perturbationResult, project }) {
 
         <p className="section-kicker">RECOVERY INTELLIGENCE</p>
 
-        <h2>How can the project recover?</h2>
-
-        <p>
-          SYNCRA converts the identified exposure into actionable recovery
-          options. The manager remains the decision authority.
-        </p>
+        <h2>Schedule Recovery Options</h2>
       </div>
 
       <div className="recovery-context">
@@ -1877,7 +1858,7 @@ function RecoveryView({ onBack, onApproved, perturbationResult, project }) {
 
         <div>
           <span>AVAILABLE FLOAT</span>
-          <strong className={result.targetNode.totalFloat === 0 ? "amber-text" : "green-text"}>
+          <strong className={result.targetNode.totalFloat === 0 ? "red-text" : "green-text"}>
             {result.targetNode.totalFloat} {result.targetNode.totalFloat === 1 ? "day" : "days"}
           </strong>
         </div>
@@ -1897,12 +1878,12 @@ function RecoveryView({ onBack, onApproved, perturbationResult, project }) {
 
       <div className="recovery-header">
         <div>
-          <p className="section-kicker">GENERATED OPTIONS</p>
-          <h3>Compare recovery consequences</h3>
+          <p className="section-kicker">ALTERNATIVES</p>
+          <h3>Recovery Scenarios</h3>
         </div>
 
         <span className="manager-authority">
-          manager DECISION
+          PM AUTHORITY
         </span>
       </div>
 
@@ -1920,7 +1901,7 @@ function RecoveryView({ onBack, onApproved, perturbationResult, project }) {
               <div className="plan-number">PLAN {plan.id}</div>
 
               {plan.recommended && (
-                <span className="recommended-tag">SYNCRA RECOMMENDS</span>
+                <span className="recommended-tag">RECOMMENDED</span>
               )}
             </div>
 
@@ -1934,7 +1915,7 @@ function RecoveryView({ onBack, onApproved, perturbationResult, project }) {
 
               <div>
                 <span>FORECAST</span>
-                <strong>{plan.forecast}</strong>
+                <strong className={plan.forecast !== "0 days" ? "red-text" : "green-text"}>{plan.forecast}</strong>
               </div>
 
               <div>
@@ -1949,7 +1930,9 @@ function RecoveryView({ onBack, onApproved, perturbationResult, project }) {
 
               <div>
                 <span>RISK</span>
-                <strong>{plan.risk}</strong>
+                <strong className={plan.risk === "High" ? "red-text" : plan.risk === "Moderate" ? "amber-text" : "green-text"}>
+                  {plan.risk}
+                </strong>
               </div>
 
             </div>
@@ -1964,17 +1947,14 @@ function RecoveryView({ onBack, onApproved, perturbationResult, project }) {
 
       <div className="recovery-reasoning">
         <div>
-          <p className="section-kicker">SYNCRA REASONING</p>
+          <p className="section-kicker">RECOMMENDATION BASIS</p>
 
           <h3>
-            Why Plan A is being recommended
+            Plan A Evaluation
           </h3>
 
           <p>
-            Plan A protects the current project finish without requiring
-            additional resource allocation. It uses an available workfront
-            to absorb the local disruption while preserving the approved
-            baseline.
+            Protects project finish date with no additional resource budget by utilizing available workfront capacity.
           </p>
         </div>
 
@@ -2015,7 +1995,7 @@ function RecoveryView({ onBack, onApproved, perturbationResult, project }) {
           onClick={onApproved}
           type="button"
         >
-          Approve selected plan →
+          Approve Plan →
         </button>
       </div>
 
@@ -2340,10 +2320,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
         <div className="supervisor-header-row">
           <div>
             <p className="section-kicker">FIELD EXECUTION ENTRY</p>
-            <h2>Domain Supervisor · Daily Field Report</h2>
-            <p className="workspace-sub">
-              Log daily site observations and ground reality without manual schedule entry.
-            </p>
+            <h2>Daily Field Report</h2>
           </div>
 
           <div className="action-buttons-group">
@@ -2363,7 +2340,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
               className="action-btn-primary"
               onClick={handleFastComplete}
             >
-              <span>⚡</span> Fast Complete Demo
+              <span>⚡</span> Process Report
             </button>
           </div>
         </div>
@@ -2455,7 +2432,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
             <div className="natural-input-section">
               <div className="input-header-bar">
                 <label htmlFor="supervisor-report-textarea" className="input-field-label">
-                  DAILY FIELD OBSERVATION (PLAIN FIELD LANGUAGE)
+                  FIELD OBSERVATION
                 </label>
                 <button
                   type="button"
@@ -2463,7 +2440,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                   onClick={toggleRecording}
                 >
                   <span className="mic-indicator">●</span>
-                  <span>{isRecording ? "Listening to site audio (2.2s)..." : "Voice Memo / Audio Dictate"}</span>
+                  <span>{isRecording ? "Listening..." : "Audio Dictate"}</span>
                 </button>
               </div>
 
@@ -2473,7 +2450,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                 rows="4"
                 value={reportNote}
                 onChange={(e) => setReportNote(e.target.value)}
-                placeholder="Describe actual field work, hindrances, or progress in normal supervisor language..."
+                placeholder="Enter field observation, hindrances, or progress details..."
               />
             </div>
 
@@ -2481,7 +2458,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
             <div className="optional-controls-row">
               <div className="optional-control-item">
                 <label>
-                  <span>OPTIONAL QUANTITY / PROGRESS</span>
+                  <span>QUANTITY PROGRESS</span>
                   <strong>{quantityProgress}% ({Math.round((quantityProgress / 100) * 17.5)}m / 17.5m)</strong>
                 </label>
                 <input
@@ -2497,7 +2474,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
 
               <div className="optional-control-item">
                 <label>
-                  <span>OPTIONAL EXECUTION STATUS</span>
+                  <span>STATUS</span>
                   <strong>{executionStatus}</strong>
                 </label>
                 <div className="status-pill-selector">
@@ -2558,13 +2535,13 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                   setHumanActionStatus(null);
                 }}
               >
-                <span>Submit Report to Execution Truth Pipeline</span>
+                <span>Submit Field Report</span>
                 <span className="cta-arrow">→</span>
               </button>
               <div className="submission-guarantee">
-                <span>🛡 Part V Dual-Score Verification</span>
+                <span>🛡 Dual-Score Verification</span>
                 <span>•</span>
-                <span>Auto-accepts routine reports without forcing supervisor confirmation</span>
+                <span>Auto-accepts routine reports</span>
               </div>
             </div>
           </div>
@@ -2573,14 +2550,14 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
           <div className="pipeline-preview-card">
             <div className="panel-header">
               <div>
-                <p className="section-kicker">SYNCRA MASTER ARCHITECTURE</p>
-                <h3>10-Stage Trust Pipeline</h3>
+                <p className="section-kicker">VERIFICATION PIPELINE</p>
+                <h3>10-Stage Pipeline</h3>
               </div>
               <span className="spec-ref-pill">Part V §23</span>
             </div>
 
             <p className="pipeline-summary-note">
-              Raw field input is never written directly to the CPM schedule. It is progressively verified through independent corroboration layers:
+              Field observations are verified through corroboration layers before schedule graph ingestion:
             </p>
 
             <div className="pipeline-mini-steps">
@@ -2597,7 +2574,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
             </div>
 
             <div className="gate-preview-box">
-              <span className="box-kicker">AUTOMATION GATE RULE (PART V §31)</span>
+              <span className="box-kicker">AUTOMATION GATE RULE</span>
               <code>
                 Confidence ≥ 90%<br />
                 AND Context Match ≥ 90%<br />
@@ -2665,10 +2642,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
               <div className="engine-live-header">
                 <div className="pulsing-logo">S</div>
                 <div>
-                  <h4>Executing Automated Verification Pipeline...</h4>
-                  <p>
-                    Corroborating field language against project vocabulary, WBS L5/L6 schedule graph, and multi-signal evidence.
-                  </p>
+                  <h4>Verifying Field Execution Event...</h4>
                 </div>
                 <button
                   id="btn-fast-complete"
@@ -2676,7 +2650,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                   className="fast-complete-btn"
                   onClick={handleFastComplete}
                 >
-                  Skip to Results ➔
+                  Skip ➔
                 </button>
               </div>
 
@@ -2808,7 +2782,7 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
 
               {/* DEMO SCENARIO SWITCHER (Allows exploring all gate branches) */}
               <div className="scenario-switcher-bar">
-                <span className="switcher-label">TEST GATE LOGIC BRANCHES:</span>
+                <span className="switcher-label">GATE LOGIC SCENARIOS:</span>
                 <div className="switcher-chips">
                   <button
                     type="button"
@@ -3061,84 +3035,104 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                     </div>
 
                     <div className="checks-list">
-                      <div className="check-detail-row">
-                        <div className="check-status-icon pass">✓</div>
-                        <div className="check-detail-content">
-                          <div className="check-title-row">
-                            <strong>CPM Schedule Position Check</strong>
-                            <span className="check-result pass">{currentScenario.cpmCheck}</span>
-                          </div>
-                          <p>
-                            {isDemoProject
-                              ? "CF-104 is within active Early Start (ES: Day 12) / Early Finish (EF: Day 16) window. Total float: 4 days."
-                              : `${project?.activities?.[2]?.id || "SP-204"} is within active Early Start (Day 36) / Early Finish (Day 49) window. Active critical chain.`}
-                          </p>
-                        </div>
-                      </div>
+                      {(() => {
+                        const isCpmFail = Boolean(currentScenario.cpmCheck && (currentScenario.cpmCheck.includes("Inconsistent") || currentScenario.cpmCheck.includes("FAILED")));
+                        const isDepWarn = Boolean(currentScenario.depCheck && (currentScenario.depCheck.includes("Warning") || currentScenario.depCheck.includes("FAILED") || currentScenario.depCheck.includes("Inconsistent")));
+                        const isLocFail = Boolean(currentScenario.materialContradiction || (currentScenario.locCheck && currentScenario.locCheck.includes("FAILED")));
+                        const isResFail = Boolean(currentScenario.resCheck && currentScenario.resCheck.includes("FAILED"));
+                        const isEviFail = Boolean(currentScenario.eviCheck && (currentScenario.eviCheck.includes("Inconclusive") || currentScenario.eviCheck.includes("Missing")));
 
-                      <div className="check-detail-row">
-                        <div className="check-status-icon pass">✓</div>
-                        <div className="check-detail-content">
-                          <div className="check-title-row">
-                            <strong>Predecessor & Successor Dependency Network</strong>
-                            <span className="check-result pass">{currentScenario.depCheck}</span>
-                          </div>
-                          <p>
-                            {isDemoProject
-                              ? "Predecessor CF-101 (Site Clearing) completed Day 11. Downstream successor CF-105 (Rebar Cage) awaiting trench excavation sign-off."
-                              : "Predecessor SP-201 (Tracker Assembly) completed Day 35. Downstream successor SP-208 (Inverter Hookup) scheduled upon stringing completion."}
-                          </p>
-                        </div>
-                      </div>
+                        return (
+                          <>
+                            <div className="check-detail-row">
+                              <div className={`check-status-icon ${isCpmFail ? "fail" : "pass"}`}>
+                                {isCpmFail ? "✕" : "✓"}
+                              </div>
+                              <div className="check-detail-content">
+                                <div className="check-title-row">
+                                  <strong>CPM Schedule Position Check</strong>
+                                  <span className={`check-result ${isCpmFail ? "fail" : "pass"}`}>{currentScenario.cpmCheck}</span>
+                                </div>
+                                <p>
+                                  {isDemoProject
+                                    ? "CF-104 is within active Early Start (ES: Day 12) / Early Finish (EF: Day 16) window. Total float: 4 days."
+                                    : `${project?.activities?.[2]?.id || "SP-204"} is within active Early Start (Day 36) / Early Finish (Day 49) window. Active critical chain.`}
+                                </p>
+                              </div>
+                            </div>
 
-                      <div className="check-detail-row">
-                        <div className={`check-status-icon ${currentScenario.materialContradiction ? "fail" : "pass"}`}>
-                          {currentScenario.materialContradiction ? "✕" : "✓"}
-                        </div>
-                        <div className="check-detail-content">
-                          <div className="check-title-row">
-                            <strong>Location / Workfront Geo-Fence</strong>
-                            <span className={`check-result ${currentScenario.materialContradiction ? "fail" : "pass"}`}>
-                              {currentScenario.locCheck}
-                            </span>
-                          </div>
-                          <p>
-                            {isDemoProject
-                              ? "Cross-referenced against supervisor login context and mobile GPS telemetry (Grid A-14, Package 2)."
-                              : `Cross-referenced against supervisor login context and mobile GPS telemetry (${project?.location || "Bikaner, Rajasthan"}).`}
-                          </p>
-                        </div>
-                      </div>
+                            <div className="check-detail-row">
+                              <div className={`check-status-icon ${isDepWarn ? "fail" : "pass"}`}>
+                                {isDepWarn ? "✕" : "✓"}
+                              </div>
+                              <div className="check-detail-content">
+                                <div className="check-title-row">
+                                  <strong>Predecessor & Successor Dependency Network</strong>
+                                  <span className={`check-result ${isDepWarn ? "fail" : "pass"}`}>{currentScenario.depCheck}</span>
+                                </div>
+                                <p>
+                                  {isDemoProject
+                                    ? "Predecessor CF-101 (Site Clearing) completed Day 11. Downstream successor CF-105 (Rebar Cage) awaiting trench excavation sign-off."
+                                    : "Predecessor SP-201 (Tracker Assembly) completed Day 35. Downstream successor SP-208 (Inverter Hookup) scheduled upon stringing completion."}
+                                </p>
+                              </div>
+                            </div>
 
-                      <div className="check-detail-row">
-                        <div className="check-status-icon pass">✓</div>
-                        <div className="check-detail-content">
-                          <div className="check-title-row">
-                            <strong>Resource Allocation Consistency</strong>
-                            <span className="check-result pass">{currentScenario.resCheck}</span>
-                          </div>
-                          <p>
-                            {isDemoProject
-                              ? "Excavator EX-07 rostered and verified on duty at Grid A-14 during 16:42 time window."
-                              : "PV Stringing Rig #4 rostered and verified on duty at Block C-08 during active shift."}
-                          </p>
-                        </div>
-                      </div>
+                            <div className="check-detail-row">
+                              <div className={`check-status-icon ${isLocFail ? "fail" : "pass"}`}>
+                                {isLocFail ? "✕" : "✓"}
+                              </div>
+                              <div className="check-detail-content">
+                                <div className="check-title-row">
+                                  <strong>Location / Workfront Geo-Fence</strong>
+                                  <span className={`check-result ${isLocFail ? "fail" : "pass"}`}>
+                                    {currentScenario.locCheck}
+                                  </span>
+                                </div>
+                                <p>
+                                  {isDemoProject
+                                    ? "Cross-referenced against supervisor login context and mobile GPS telemetry (Grid A-14, Package 2)."
+                                    : `Cross-referenced against supervisor login context and mobile GPS telemetry (${project?.location || "Bikaner, Rajasthan"}).`}
+                                </p>
+                              </div>
+                            </div>
 
-                      <div className="check-detail-row">
-                        <div className="check-status-icon pass">✓</div>
-                        <div className="check-detail-content">
-                          <div className="check-title-row">
-                            <strong>Photographic / Evidence Corroboration</strong>
-                            <span className="check-result pass">{currentScenario.eviCheck}</span>
-                          </div>
-                          <p>
-                            {isDemoProject
-                              ? "Photographic evidence depicts exposed concrete obstruction blocking trench excavation bucket path."
-                              : "Photographic evidence depicts active PV module stringing & cabling on Block C-08 tracker rows."}
-                          </p>
-                        </div>
-                      </div>
+                            <div className="check-detail-row">
+                              <div className={`check-status-icon ${isResFail ? "fail" : "pass"}`}>
+                                {isResFail ? "✕" : "✓"}
+                              </div>
+                              <div className="check-detail-content">
+                                <div className="check-title-row">
+                                  <strong>Resource Allocation Consistency</strong>
+                                  <span className={`check-result ${isResFail ? "fail" : "pass"}`}>{currentScenario.resCheck}</span>
+                                </div>
+                                <p>
+                                  {isDemoProject
+                                    ? "Excavator EX-07 rostered and verified on duty at Grid A-14 during 16:42 time window."
+                                    : "PV Stringing Rig #4 rostered and verified on duty at Block C-08 during active shift."}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="check-detail-row">
+                              <div className={`check-status-icon ${isEviFail ? "fail" : "pass"}`}>
+                                {isEviFail ? "✕" : "✓"}
+                              </div>
+                              <div className="check-detail-content">
+                                <div className="check-title-row">
+                                  <strong>Photographic / Evidence Corroboration</strong>
+                                  <span className={`check-result ${isEviFail ? "fail" : "pass"}`}>{currentScenario.eviCheck}</span>
+                                </div>
+                                <p>
+                                  {isDemoProject
+                                    ? "Photographic evidence depicts exposed concrete obstruction blocking trench excavation bucket path."
+                                    : "Photographic evidence depicts active PV module stringing & cabling on Block C-08 tracker rows."}
+                                </p>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -3248,8 +3242,8 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
 
                   <span className="action-context-hint">
                     {currentScenario.gateRouting === "AUTO-ACCEPT"
-                      ? "✓ Routine event auto-accepted to working schedule with zero manual friction."
-                      : "⚠ Exception condition: Human supervisory review required to resolve event state."}
+                      ? "✓ Routine event auto-accepted to working schedule."
+                      : "⚠ Supervisory review required to resolve event state."}
                   </span>
                 </div>
 
@@ -3294,8 +3288,8 @@ function DomainSupervisorView({ onPublish, activeScenarioId, onSelectScenario, p
                 <div className="publish-pill-left">
                   <span className="sync-icon">⚡</span>
                   <div>
-                    <strong>Shared Project State Broadcast: EV-014</strong>
-                    <small>Real-time updates broadcast to Project Manager, CPM Critical Path & Recovery Engines</small>
+                    <strong>State Broadcast: EV-014</strong>
+                    <small>Real-time sync with CPM Critical Path & Recovery Engines</small>
                   </div>
                 </div>
 
@@ -3333,13 +3327,9 @@ function UpdatedStateView({ perturbationResult, project }) {
     <section className="content">
 
       <div className="page-intro">
-        <p className="section-kicker">STATE UPDATED · DYNAMIC CPM ENGINE</p>
+        <p className="section-kicker">SCHEDULE STATE</p>
 
-        <h2>Living Schedule vs Approved Baseline</h2>
-
-        <p>
-          The dynamic CPM engine recalculates forecast dates while locking the contractually approved baseline.
-        </p>
+        <h2>Living Schedule vs Baseline</h2>
       </div>
 
       <div className="update-success">
@@ -3347,7 +3337,7 @@ function UpdatedStateView({ perturbationResult, project }) {
 
         <div>
           <span>RECOVERY ORIENTATION</span>
-          <strong>{isDelayed ? `Variance Managed: +${result.projectDelayDays}d Delay` : "Variance Absorbed: On Schedule"}</strong>
+          <strong className={isDelayed ? "red-text" : "green-text"}>{isDelayed ? `Variance Managed: +${result.projectDelayDays}d Delay` : "Variance Absorbed: On Schedule"}</strong>
           <p>Approved baseline locked · Working plan active</p>
         </div>
 
@@ -3361,7 +3351,7 @@ function UpdatedStateView({ perturbationResult, project }) {
         <div className="update-card">
           <p className="section-kicker">SCHEDULE STATE</p>
 
-          <h3>Current working forecast</h3>
+          <h3>Working Forecast</h3>
 
           <div className="forecast-comparison">
             <div>
@@ -3381,15 +3371,15 @@ function UpdatedStateView({ perturbationResult, project }) {
 
           <p>
             {isDelayed
-              ? `Downstream critical chain extended. Substantial Completion moves to Day ${forecastFinish}.`
-              : "Disruption fully absorbed into available total float buffer without moving the project finish."}
+              ? `Critical path extended to Day ${forecastFinish}.`
+              : "Disruption absorbed within float buffer."}
           </p>
         </div>
 
         <div className="update-card baseline-card">
           <p className="section-kicker">BASELINE CONTROL</p>
 
-          <h3>Approved baseline preserved</h3>
+          <h3>Approved Baseline</h3>
 
           <div className="baseline-row">
             <span>BASELINE FINISH</span>
@@ -3415,8 +3405,8 @@ function UpdatedStateView({ perturbationResult, project }) {
       <div className="state-schedule-table-card panel" style={{ marginTop: "24px", padding: "20px" }}>
         <div className="panel-header">
           <div>
-            <p className="section-kicker">LIVING EPC SCHEDULE STATUS</p>
-            <h3>{nodeCount}-Node Schedule Variance Table</h3>
+            <p className="section-kicker">SCHEDULE STATUS</p>
+            <h3>{nodeCount}-Node Variance Table</h3>
           </div>
           <span className="state-change-tag">TOPOLOGICAL CPM</span>
         </div>
@@ -3482,8 +3472,8 @@ function UpdatedStateView({ perturbationResult, project }) {
       <div className="audit-card" style={{ marginTop: "24px" }}>
 
         <div>
-          <p className="section-kicker">AUDIT TRAIL</p>
-          <h3>Decision history preserved</h3>
+          <p className="section-kicker">AUDIT LOG</p>
+          <h3>Decision History</h3>
         </div>
 
         <div className="audit-events">
@@ -3518,16 +3508,14 @@ function UpdatedStateView({ perturbationResult, project }) {
       <div className="institutional-memory">
 
         <div>
-          <p className="section-kicker">INSTITUTIONAL MEMORY</p>
+          <p className="section-kicker">PROJECT MEMORY</p>
 
           <h3>
-            This event becomes project knowledge.
+            Execution Provenance
           </h3>
 
           <p>
-            Evidence, state changes, constraints, decisions and outcomes are
-            retained so future planning and predictive analysis can use the
-            project's actual execution history.
+            Audit history, constraints, and decision logs recorded to project archive.
           </p>
         </div>
 
